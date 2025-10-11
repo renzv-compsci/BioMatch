@@ -1,173 +1,270 @@
-"""
-pip instasll bcrypt pls 
+# database.py
 
-Module sets up SQLite database this includes secure password hashing
-, and convinient CRUD operations 
-"""
-import os
 import sqlite3
 import bcrypt
-from typing import Optional, List, Tuple, Dict
+import os
+from datetime import datetime
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_DIR = os.path.join(BASE_DIR, "database")
-DB_BIOMATCH = os.path.join(DB_DIR, "biomatch.db")
-
-os.makedirs(DB_DIR, exist_ok=True)
-
-# Database initialization 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS hospitals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    address TEXT,
-    location_x REAL,
-    location_y REAL
-);
-
-CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL, -- 'admin', 'hospital_staff', etc.
-    hospital_id INTEGER,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
-);
-
-CREATE TABLE IF NOT EXISTS donors (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    donor_id_hash TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
-    blood_type TEXT NOT NULL,
-    hospital_id INTEGER,
-    last_donation_date TEXT,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
-);
-
-CREATE TABLE IF NOT EXISTS inventory (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hospital_id INTEGER,
-    blood_type TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
-    last_updated TEXT,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id),
-    UNIQUE(hospital_id, blood_type)
-);
-
-CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    txn_id_hash TEXT NOT NULL UNIQUE,
-    type TEXT NOT NULL,
-    hospital_id INTEGER NOT NULL,
-    donor_id_hash TEXT,
-    related_hospital_id INTEGER,
-    blood_type TEXT NOT NULL,
-    units INTEGER NOT NULL,
-    date TEXT NOT NULL,
-    FOREIGN KEY (hospital_id) REFERENCES hospitals(id),
-    FOREIGN KEY (donor_id_hash) REFERENCES donors(donor_id_hash),
-    FOREIGN KEY (related_hospital_id) REFERENCES hospitals(id)
-);
-"""
-
-# creates db connection
-def db_connection():
-    conn = sqlite3.connect(DB_BIOMATCH)
-    conn.row_factory = sqlite3.Row
-    return conn 
+# Use absolute path to ensure consistency
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(BASE_DIR, "biomatch.db")
 
 def initialize_db():
-    try:
-        with db_connection() as conn:
-            conn.executescript(SCHEMA_SQL)
-        print("Database initialized")
-    except Exception as e:
-        print(f"Database initializatiion failed {e}")
+    """Initialize all database tables"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
 
-# security utilities 
-def hash_pass(password: str) -> bytes:
-    # Hashes password using bcrypt
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-def verify_pass(password: str, password_hash: bytes) -> bool:
-    return bcrypt.checkpw(password.encode('utf-8'), password_hash)
-
-# user management 
-def create_user(username: str, password: str, role: str, hospital_id: Optional[int] = None) -> bool:
-    # creates user with hashed password 
-    password_hash = hash_pass(password)
-    try: 
-        with db_connection() as conn:
-            conn.execute (
-                "INSERT INTO users (username,password_hash, role, hospital_id) VALUES (?, ?, ?, ?)",
-                (username, password_hash, role, hospital_id)
-            )
-            return True
-    except sqlite3.IntegrityError:
-        # if username already exists
-        return False
-
-def authenticate_user(username: str, password: str) -> Optional[Dict]:
-    # authenticates user by username and password 
-    with db_connection() as conn:
-        cur = conn.execute(
-            "SELECT * FROM users WHERE username = ?",
-            (username,)
+    # HOSPITALS TABLE
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hospitals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            address TEXT NOT NULL,
+            contact_person TEXT NOT NULL,
+            contact_number TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        user = cur.fetchone()
-        if user and verify_pass(password, user["password_hash"]):
-            return dict(user)
-    return None
+    ''')
 
-# hospital management 
-def add_hospital(name: str, address: str, location_x: float, location_y: float) -> bool:
-    # add hospital 
+    # USERS TABLE (linked to hospital)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'staff',
+            hospital_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
+        )
+    ''')
+
+    # DONATIONS TABLE
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS donations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            donor_name TEXT NOT NULL,
+            blood_type TEXT NOT NULL,
+            units INTEGER NOT NULL,
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            hospital_id INTEGER NOT NULL,
+            FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
+        )
+    ''')
+
+    # INVENTORY TABLE
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blood_type TEXT NOT NULL,
+            units_available INTEGER DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            hospital_id INTEGER NOT NULL,
+            UNIQUE(blood_type, hospital_id),
+            FOREIGN KEY (hospital_id) REFERENCES hospitals(id)
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+
+# =============================================
+# HOSPITAL MANAGEMENT FUNCTIONS
+# =============================================
+
+def register_hospital(name, address, contact_person, contact_number):
+    """Register a new hospital in the system"""
     try:
-        with db_connection() as conn:
-            conn.execute(
-                "INSERT INTO hospitals (name, address, location_x, location_y) VALUES (?, ?, ?, ?)",
-                (name, address, location_x, location_y)
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO hospitals (name, address, contact_person, contact_number) VALUES (?, ?, ?, ?)",
+            (name, address, contact_person, contact_number)
+        )
+        hospital_id = cursor.lastrowid
+        conn.commit()
+        
+        # Initialize inventory for all blood types
+        blood_types = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+        for blood_type in blood_types:
+            cursor.execute(
+                "INSERT INTO inventory (blood_type, units_available, hospital_id) VALUES (?, 0, ?)",
+                (blood_type, hospital_id)
             )
+        conn.commit()
+        
+        return hospital_id
+    except sqlite3.IntegrityError:
+        return None
+    finally:
+        conn.close()
+
+
+def get_all_hospitals():
+    """Get list of all registered hospitals"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, address FROM hospitals")
+    hospitals = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return hospitals
+
+
+def get_hospital_by_id(hospital_id):
+    """Get hospital details by ID"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM hospitals WHERE id = ?", (hospital_id,))
+    hospital = cursor.fetchone()
+    conn.close()
+    return dict(hospital) if hospital else None
+
+
+# =============================================
+# USER AUTHENTICATION FUNCTIONS
+# =============================================
+
+def create_user(username, password, role, hospital_id):
+    """Create a new user linked to a hospital"""
+    try:
+        # Hash the password
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role, hospital_id) VALUES (?, ?, ?, ?)",
+            (username, password_hash, role, hospital_id)
+        )
+        conn.commit()
         return True
     except sqlite3.IntegrityError:
         return False
+    finally:
+        conn.close()
 
-def get_hospital(name: str) -> Optional[Dict]:
-    with db_connection() as conn:
-        cur = conn.execute("SELECT* FROM hospitals WHERE name = ?", (name,))
-        row = cur.fetchone()
-        return dict(row) if row else None
 
-def get_all_hospital() -> List[Dict]:
-    with db_connection() as conn:
-        cur = conn.execute ("SELECT * FROM hospitals")
-        return [dict(row) for row in cur.fetchall()]
-
-if __name__ == "__main__":
-    initialize_db
-
-    # Acc for admin
-    admin_username = "admin"
-    admin_password = "adminpass"
-    admin_role = "admin"
-
-    # check if admin exists, else create
-    with db_connection() as conn:
-        cur = conn.execute("SELECT * FROM users WHERE username = ?", (admin_username,))
-        if not cur.fetchone():
-            print("Creating default admin user...")
-            created = create_user(admin_username, admin_password, admin_role)
-            print("Admin created." if created else "Failed to create admin (username exists).")
-
-    # Add a hospital
-    if add_hospital("St. Luke's Hospital", "Quezon Ave, QC", 14.6517, 121.0497):
-        print("Hospital added.")
-    else:
-        print("Hospital already exists.")
-
-    # authenticate the admin
-    user = authenticate_user(admin_username, admin_password)
+def authenticate_user(username, password):
+    """Authenticate user and return their details including hospital_id"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM users WHERE username = ?",
+        (username,)
+    )
+    user = cursor.fetchone()
+    conn.close()
+    
     if user:
-        print(f"Authenticated as: {user['username']} (Role: {user['role']})")
-    else:
-        print("Authentication failed.")
+        # Verify password
+        if bcrypt.checkpw(password.encode('utf-8'), user['password_hash']):
+            return {
+                "id": user['id'],
+                "username": user['username'],
+                "role": user['role'],
+                "hospital_id": user['hospital_id']
+            }
+    return None
+
+
+# =============================================
+# DONATION MANAGEMENT FUNCTIONS
+# =============================================
+
+def add_donation(donor_name, blood_type, units, hospital_id):
+    """Add a donation and automatically update inventory"""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        # Insert donation record
+        cursor.execute(
+            "INSERT INTO donations (donor_name, blood_type, units, hospital_id) VALUES (?, ?, ?, ?)",
+            (donor_name, blood_type, units, hospital_id)
+        )
+        
+        # Update inventory
+        cursor.execute(
+            "UPDATE inventory SET units_available = units_available + ?, last_updated = ? WHERE blood_type = ? AND hospital_id = ?",
+            (units, datetime.now().isoformat(), blood_type, hospital_id)
+        )
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error adding donation: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_donations_by_hospital(hospital_id):
+    """Get all donations for a specific hospital"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM donations WHERE hospital_id = ? ORDER BY date DESC",
+        (hospital_id,)
+    )
+    donations = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return donations
+
+
+# =============================================
+# INVENTORY MANAGEMENT FUNCTIONS
+# =============================================
+
+def get_inventory_by_hospital(hospital_id):
+    """Get blood inventory for a specific hospital"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT blood_type, units_available, last_updated FROM inventory WHERE hospital_id = ? ORDER BY blood_type",
+        (hospital_id,)
+    )
+    inventory = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return inventory
+
+
+def search_blood_across_hospitals(blood_type, units_needed):
+    """Search for compatible blood types across all hospitals"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Define compatibility rules
+    compatibility_map = {
+        "A+": ["A+", "A-", "O+", "O-"],
+        "A-": ["A-", "O-"],
+        "B+": ["B+", "B-", "O+", "O-"],
+        "B-": ["B-", "O-"],
+        "AB+": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
+        "AB-": ["A-", "B-", "AB-", "O-"],
+        "O+": ["O+", "O-"],
+        "O-": ["O-"]
+    }
+    
+    compatible_types = compatibility_map.get(blood_type, [blood_type])
+    
+    # Search for compatible blood across hospitals
+    placeholders = ','.join('?' * len(compatible_types))
+    query = f"""
+        SELECT i.blood_type, i.units_available, h.name as hospital_name, h.address, h.contact_number
+        FROM inventory i
+        JOIN hospitals h ON i.hospital_id = h.id
+        WHERE i.blood_type IN ({placeholders}) AND i.units_available >= ?
+        ORDER BY i.units_available DESC
+    """
+    
+    cursor.execute(query, (*compatible_types, units_needed))
+    results = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return results
