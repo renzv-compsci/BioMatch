@@ -268,3 +268,56 @@ def search_blood_across_hospitals(blood_type, units_needed):
     results = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return results
+
+
+def search_available_blood_units(blood_type, quantity_needed, priority_level):
+    """
+    Search for available blood units across all hospitals for a blood request.
+    
+    This function is used by the /request_blood endpoint to find matching blood inventory
+    across all registered hospitals based on the requested blood type.
+    
+    Args:
+        blood_type (str): The requested blood type (e.g., "A+", "O-")
+        quantity_needed (int): The number of units required
+        priority_level (str): Priority level ("Low", "Medium", "High", "Critical")
+    
+    Returns:
+        list: List of dictionaries containing blood type, hospital name, and units available
+              Returns only exact blood type matches (no compatibility mapping)
+    """
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Query for exact blood type matches across all hospitals
+    # Only return hospitals with available units > 0
+    query = """
+        SELECT 
+            i.blood_type,
+            h.name as hospital_name,
+            i.units_available,
+            h.contact_number,
+            h.address,
+            i.last_updated
+        FROM inventory i
+        JOIN hospitals h ON i.hospital_id = h.id
+        WHERE i.blood_type = ? AND i.units_available > 0
+        ORDER BY i.units_available DESC, h.name ASC
+    """
+    
+    cursor.execute(query, (blood_type,))
+    results = cursor.fetchall()
+    conn.close()
+    
+    # Convert to list of dictionaries with only required fields for the response
+    matched_units = [
+        {
+            "blood_type": row['blood_type'],
+            "hospital_name": row['hospital_name'],
+            "units_available": row['units_available']
+        }
+        for row in results
+    ]
+    
+    return matched_units
