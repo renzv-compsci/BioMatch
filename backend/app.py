@@ -12,7 +12,8 @@ from database import (
     add_donation,
     get_donations_by_hospital,
     get_inventory_by_hospital,
-    search_blood_across_hospitals
+    search_blood_across_hospitals,
+    search_available_blood_units
 )
 
 app = Flask(__name__)
@@ -173,6 +174,124 @@ def search_blood():
     
     results = search_blood_across_hospitals(blood_type, units_needed)
     return jsonify(results), 200
+
+
+# =============================================
+# BLOOD REQUEST ENDPOINTS
+# =============================================
+
+@app.route('/request_blood', methods=['POST'])
+@app.route('/api/v1/blood/request', methods=['POST'])
+def request_blood():
+    """
+    Process a blood request and return matching available units.
+    
+    This endpoint enables hospitals or requesters to submit a blood request
+    and retrieve a list of matching available blood units across all hospitals.
+    
+    Request Method: POST
+    Justification: POST is chosen because this endpoint processes complex request data,
+    may trigger logging/tracking of blood requests in future iterations, and follows
+    RESTful conventions for resource queries with multiple parameters.
+    
+    Expected JSON body:
+    {
+        "blood_type": "A+",
+        "quantity_needed": 3,
+        "priority_level": "High",
+        "required_date": "2025-10-18"
+    }
+    
+    Returns:
+    {
+        "message": "Found N hospitals with matching blood units",
+        "requested": {
+            "blood_type": "A+",
+            "quantity_needed": 3,
+            "priority_level": "High",
+            "required_date": "2025-10-18"
+        },
+        "results": [
+            {
+                "blood_type": "A+",
+                "hospital_name": "City General Hospital",
+                "units_available": 5
+            }
+        ]
+    }
+    """
+    data = request.json
+    
+    # Input validation
+    blood_type = data.get('blood_type')
+    quantity_needed = data.get('quantity_needed')
+    priority_level = data.get('priority_level')
+    required_date = data.get('required_date')
+    
+    # Validate required fields
+    if not all([blood_type, quantity_needed, priority_level, required_date]):
+        return jsonify({
+            "message": "All fields are required: blood_type, quantity_needed, priority_level, required_date"
+        }), 400
+    
+    # Validate data types and values
+    try:
+        quantity_needed = int(quantity_needed)
+        if quantity_needed <= 0:
+            raise ValueError("Quantity must be positive")
+    except (ValueError, TypeError):
+        return jsonify({"message": "quantity_needed must be a positive integer"}), 400
+    
+    # Validate blood type format
+    valid_blood_types = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+    if blood_type not in valid_blood_types:
+        return jsonify({
+            "message": f"Invalid blood type. Must be one of: {', '.join(valid_blood_types)}"
+        }), 400
+    
+    # Validate priority level
+    valid_priorities = ["Low", "Medium", "High", "Critical"]
+    if priority_level not in valid_priorities:
+        return jsonify({
+            "message": f"Invalid priority level. Must be one of: {', '.join(valid_priorities)}"
+        }), 400
+    
+    # Validate date format (basic ISO 8601 format check)
+    try:
+        from datetime import datetime
+        datetime.fromisoformat(required_date.replace('Z', '+00:00'))
+    except ValueError:
+        return jsonify({
+            "message": "Invalid date format. Use ISO 8601 format (e.g., '2025-10-15' or '2025-10-15T10:30:00')"
+        }), 400
+    
+    # Search for matching blood units across all hospitals
+    matches = search_available_blood_units(blood_type, quantity_needed, priority_level)
+    
+    if not matches:
+        return jsonify({
+            "message": f"No matching blood units found for type {blood_type}",
+            "requested": {
+                "blood_type": blood_type,
+                "quantity_needed": quantity_needed,
+                "priority_level": priority_level,
+                "required_date": required_date
+            },
+            "results": []
+        }), 200  # Changed to 200 with empty results array instead of 404
+    
+    # Results are already sorted by units_available DESC, hospital_name ASC in the database function
+    
+    return jsonify({
+        "message": f"Found {len(matches)} hospital(s) with matching blood units",
+        "requested": {
+            "blood_type": blood_type,
+            "quantity_needed": quantity_needed,
+            "priority_level": priority_level,
+            "required_date": required_date
+        },
+        "results": matches
+    }), 200
 
 
 # =============================================

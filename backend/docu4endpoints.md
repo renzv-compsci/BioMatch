@@ -174,6 +174,104 @@ B- → B-, O-
 O+ → O+, O-
 O- → O- only
 
+
+---
+
+## NEW FEATURE: Blood Request System
+
+### `POST /request_blood` or `POST /api/v1/blood/request`
+**Submit a blood request and retrieve matching available blood units across all hospitals.**
+
+**Endpoint Choice Justification:**
+- **Method:** `POST` (not GET)
+- **Reason:** Complex request payload with multiple parameters, potential future logging/audit trail requirements, and follows RESTful best practices for resource queries with state implications.
+
+**Request:**
+```json
+{
+  "blood_type": "A+",
+  "quantity_needed": 3,
+  "priority_level": "High",
+  "required_date": "2025-10-18"
+}
+```
+
+**Field Validation:**
+- `blood_type` (string, required): Must be one of: A+, A-, B+, B-, AB+, AB-, O+, O-
+- `quantity_needed` (integer, required): Must be a positive integer
+- `priority_level` (string, required): Must be one of: Low, Medium, High, Critical
+- `required_date` (string, required): ISO 8601 date format (e.g., "2025-10-18" or "2025-10-18T14:30:00")
+
+**Response (200 - Success with results):**
+```json
+{
+  "message": "Found 2 hospital(s) with matching blood units",
+  "requested": {
+    "blood_type": "A+",
+    "quantity_needed": 3,
+    "priority_level": "High",
+    "required_date": "2025-10-18"
+  },
+  "results": [
+    {
+      "blood_type": "A+",
+      "hospital_name": "City General Hospital",
+      "units_available": 5
+    },
+    {
+      "blood_type": "A+",
+      "hospital_name": "Metro Blood Center",
+      "units_available": 2
+    }
+  ]
+}
+```
+
+**Response (200 - No results found):**
+```json
+{
+  "message": "No matching blood units found for type A+",
+  "requested": {
+    "blood_type": "A+",
+    "quantity_needed": 3,
+    "priority_level": "High",
+    "required_date": "2025-10-18"
+  },
+  "results": []
+}
+```
+
+**Response (400 - Validation Error):**
+```json
+{
+  "message": "All fields are required: blood_type, quantity_needed, priority_level, required_date"
+}
+```
+
+or
+
+```json
+{
+  "message": "Invalid blood type. Must be one of: A+, A-, B+, B-, AB+, AB-, O+, O-"
+}
+```
+
+**Data Flow:**
+1. **Request Validation** → Validate all input parameters (blood type, quantity, priority, date)
+2. **Database Query** → Query inventory table for exact blood type matches with units > 0
+3. **Response Assembly** → Sort results by units available (DESC) and hospital name (ASC)
+4. **Return JSON** → Return structured response with request context and results
+
+**Key Features:**
+- ✅ Comprehensive input validation with clear error messages
+- ✅ Returns exact blood type matches only (no compatibility mapping)
+- ✅ Results sorted by availability (highest to lowest)
+- ✅ Includes request context in response for tracking
+- ✅ RESTful status codes (200 for success/no results, 400 for validation errors)
+- ✅ Supports both legacy `/request_blood` and versioned `/api/v1/blood/request` routes
+
+---
+
 GET /ping
 Health check endpoint.
 
