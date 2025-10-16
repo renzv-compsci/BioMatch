@@ -101,7 +101,3 @@ def search_available_blood_units(blood_type, quantity_needed, priority_level):
     ]
     
     return matched_units
-
-# =============================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(BASE_DIR, "biomatch.db")
