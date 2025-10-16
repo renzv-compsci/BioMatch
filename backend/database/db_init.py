@@ -1,8 +1,8 @@
 import sqlite3
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(BASE_DIR, "../biomatch.db")
+# Use absolute path to ensure consistency across all imports
+DB_NAME = r"C:\Users\Ken Ira Talingting\Documents\BioMatch\backend\biomatch.db"
 
 def initialize_db():
     """Initialize all database tables."""

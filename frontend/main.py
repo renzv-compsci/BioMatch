@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import requests
 import os
+from blood_request_page import BloodRequestPage
 
 API_BASE_URL = "http://127.0.0.1:5000"
 
@@ -29,7 +30,7 @@ class BioMatchApp:
         # Initialize all pages and place them in the same grid cell
         for PageClass in (WelcomePage, RegisterHospitalPage, RegisterUserPage, LoginPage, 
                           DashboardPage, AddDonationPage, ViewInventoryPage, SearchBloodPage,
-                          TransactionHistoryPage):
+                          TransactionHistoryPage, BloodRequestPage):
             page_name = PageClass.__name__
             frame = PageClass(parent=self.container, controller=self)
             self.frames[page_name] = frame
@@ -353,10 +354,12 @@ class DashboardPage(tk.Frame):
                    command=lambda: controller.show_frame("ViewInventoryPage")).grid(row=0, column=1, padx=10, pady=10)
         ttk.Button(nav_frame, text="Search Blood", width=20,
                    command=lambda: controller.show_frame("SearchBloodPage")).grid(row=1, column=0, padx=10, pady=10)
+        ttk.Button(nav_frame, text="Request Blood", width=20,
+                   command=lambda: controller.show_frame("BloodRequestPage")).grid(row=1, column=1, padx=10, pady=10)
         ttk.Button(nav_frame, text="Transaction History", width=20,
-                   command=lambda: controller.show_frame("TransactionHistoryPage")).grid(row=1, column=1, padx=10, pady=10)
+                   command=lambda: controller.show_frame("TransactionHistoryPage")).grid(row=2, column=0, padx=10, pady=10)
         ttk.Button(nav_frame, text="Logout", width=20,
-                   command=controller.logout).grid(row=2, column=0, columnspan=2, padx=10, pady=10)
+                   command=controller.logout).grid(row=2, column=1, padx=10, pady=10)
     
     def refresh_data(self):
         """Refresh dashboard data"""
