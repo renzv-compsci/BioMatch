@@ -1,8 +1,8 @@
 # frontend/main_ui.py
-
 import tkinter as tk
 from tkinter import messagebox, ttk
 import requests
+import os
 
 API_BASE_URL = "http://127.0.0.1:5000"
 
@@ -28,7 +28,8 @@ class BioMatchApp:
         
         # Initialize all pages and place them in the same grid cell
         for PageClass in (WelcomePage, RegisterHospitalPage, RegisterUserPage, LoginPage, 
-                          DashboardPage, AddDonationPage, ViewInventoryPage, SearchBloodPage):
+                          DashboardPage, AddDonationPage, ViewInventoryPage, SearchBloodPage,
+                          TransactionHistoryPage):
             page_name = PageClass.__name__
             frame = PageClass(parent=self.container, controller=self)
             self.frames[page_name] = frame
@@ -52,6 +53,8 @@ class BioMatchApp:
             self.frames["DashboardPage"].refresh_data()
         elif page_name == "ViewInventoryPage" and self.current_user:
             self.frames["ViewInventoryPage"].load_inventory()
+        elif page_name == "TransactionHistoryPage" and self.current_user:
+            self.frames["TransactionHistoryPage"].load_transactions()
     
     def exit_fullscreen(self):
         self.root.attributes('-fullscreen', False)
@@ -350,8 +353,10 @@ class DashboardPage(tk.Frame):
                    command=lambda: controller.show_frame("ViewInventoryPage")).grid(row=0, column=1, padx=10, pady=10)
         ttk.Button(nav_frame, text="Search Blood", width=20,
                    command=lambda: controller.show_frame("SearchBloodPage")).grid(row=1, column=0, padx=10, pady=10)
+        ttk.Button(nav_frame, text="Transaction History", width=20,
+                   command=lambda: controller.show_frame("TransactionHistoryPage")).grid(row=1, column=1, padx=10, pady=10)
         ttk.Button(nav_frame, text="Logout", width=20,
-                   command=controller.logout).grid(row=1, column=1, padx=10, pady=10)
+                   command=controller.logout).grid(row=2, column=0, columnspan=2, padx=10, pady=10)
     
     def refresh_data(self):
         """Refresh dashboard data"""
@@ -571,6 +576,273 @@ class SearchBloodPage(tk.Frame):
                 messagebox.showerror("Error", "Search failed")
         except Exception as e:
             messagebox.showerror("Connection Error", f"Cannot connect to server: {e}")
+
+
+# =============================================
+# TRANSACTION HISTORY PAGE
+# =============================================
+
+class TransactionHistoryPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent, bg="white")
+        self.controller = controller
+        
+        # Header
+        tk.Label(self, text="Transaction History", font=("Arial", 24, "bold"), bg="white").pack(pady=20)
+        
+        # Filter controls frame
+        filter_frame = tk.Frame(self, bg="white")
+        filter_frame.pack(pady=10, fill="x", padx=50)
+        
+        # Transaction Type Filter
+        tk.Label(filter_frame, text="Type:", bg="white", font=("Arial", 11)).grid(row=0, column=0, padx=5, sticky="w")
+        self.type_filter = ttk.Combobox(filter_frame, values=["All", "donation", "request", "transfer"], 
+                                        font=("Arial", 11), width=12, state="readonly")
+        self.type_filter.set("All")
+        self.type_filter.grid(row=0, column=1, padx=5)
+        
+        # Status Filter
+        tk.Label(filter_frame, text="Status:", bg="white", font=("Arial", 11)).grid(row=0, column=2, padx=5, sticky="w")
+        self.status_filter = ttk.Combobox(filter_frame, values=["All", "pending", "completed", "cancelled"], 
+                                          font=("Arial", 11), width=12, state="readonly")
+        self.status_filter.set("All")
+        self.status_filter.grid(row=0, column=3, padx=5)
+        
+        # Limit Filter
+        tk.Label(filter_frame, text="Show:", bg="white", font=("Arial", 11)).grid(row=0, column=4, padx=5, sticky="w")
+        self.limit_filter = ttk.Combobox(filter_frame, values=["50", "100", "200"], 
+                                         font=("Arial", 11), width=8, state="readonly")
+        self.limit_filter.set("100")
+        self.limit_filter.grid(row=0, column=5, padx=5)
+        
+        # Apply Filter Button
+        ttk.Button(filter_frame, text="Apply Filters", command=self.load_transactions).grid(row=0, column=6, padx=10)
+        
+        # Export Button
+        ttk.Button(filter_frame, text="Export to CSV", command=self.export_to_csv).grid(row=0, column=7, padx=5)
+        
+        # Statistics Frame
+        self.stats_frame = tk.Frame(self, bg="#f0f0f0", relief="ridge", borderwidth=2)
+        self.stats_frame.pack(pady=10, fill="x", padx=50)
+        
+        # Treeview frame
+        tree_frame = tk.Frame(self, bg="white")
+        tree_frame.pack(pady=10, fill="both", expand=True, padx=50)
+        
+        # Scrollbars
+        tree_scroll_y = ttk.Scrollbar(tree_frame, orient="vertical")
+        tree_scroll_y.pack(side="right", fill="y")
+        
+        tree_scroll_x = ttk.Scrollbar(tree_frame, orient="horizontal")
+        tree_scroll_x.pack(side="bottom", fill="x")
+        
+        # Treeview widget
+        columns = ("ID", "Type", "Blood Type", "Units", "Hospital", "Target Hospital", 
+                   "Status", "Priority", "Date", "Notes")
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", 
+                                 yscrollcommand=tree_scroll_y.set, 
+                                 xscrollcommand=tree_scroll_x.set)
+        
+        # Configure scrollbars
+        tree_scroll_y.config(command=self.tree.yview)
+        tree_scroll_x.config(command=self.tree.xview)
+        
+        # Column headings and widths
+        column_widths = {
+            "ID": 60,
+            "Type": 100,
+            "Blood Type": 90,
+            "Units": 70,
+            "Hospital": 150,
+            "Target Hospital": 150,
+            "Status": 90,
+            "Priority": 80,
+            "Date": 150,
+            "Notes": 200
+        }
+        
+        for col in columns:
+            self.tree.heading(col, text=col, command=lambda c=col: self.sort_column(c, False))
+            self.tree.column(col, width=column_widths.get(col, 100), anchor="center")
+        
+        self.tree.pack(fill="both", expand=True)
+        
+        # Color tags for different statuses
+        self.tree.tag_configure("completed", background="#d4edda")
+        self.tree.tag_configure("pending", background="#fff3cd")
+        self.tree.tag_configure("cancelled", background="#f8d7da")
+        
+        # Button frame
+        button_frame = tk.Frame(self, bg="white")
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Refresh", command=self.load_transactions).grid(row=0, column=0, padx=10)
+        ttk.Button(button_frame, text="Back to Dashboard", 
+                   command=lambda: controller.show_frame("DashboardPage")).grid(row=0, column=1, padx=10)
+        
+        # Store sort order
+        self.sort_reverse = {}
+    
+    def load_transactions(self):
+        """Load transaction history from API"""
+        if not self.controller.current_user:
+            return
+        
+        hospital_id = self.controller.current_user['hospital_id']
+        
+        # Build query parameters
+        params = {"limit": self.limit_filter.get()}
+        
+        type_value = self.type_filter.get()
+        if type_value != "All":
+            params["type"] = type_value
+        
+        status_value = self.status_filter.get()
+        if status_value != "All":
+            params["status"] = status_value
+        
+        # Clear existing data
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        # Clear stats
+        for widget in self.stats_frame.winfo_children():
+            widget.destroy()
+        
+        try:
+            # Fetch transactions
+            response = requests.get(f"{API_BASE_URL}/transactions/{hospital_id}", params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                transactions = data.get("transactions", [])
+                
+                # Load statistics
+                self.load_statistics(hospital_id)
+                
+                # Populate treeview
+                for transaction in transactions:
+                    tag = transaction.get('status', 'completed')
+                    
+                    # Format date
+                    created_at = transaction.get('created_at', '')
+                    if created_at:
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            created_at = dt.strftime("%Y-%m-%d %H:%M")
+                        except:
+                            pass
+                    
+                    self.tree.insert("", tk.END, values=(
+                        transaction.get('id', ''),
+                        transaction.get('transaction_type', ''),
+                        transaction.get('blood_type', ''),
+                        transaction.get('units', ''),
+                        transaction.get('hospital_name', '')[:20] + '...' if len(transaction.get('hospital_name', '')) > 20 else transaction.get('hospital_name', ''),
+                        transaction.get('target_hospital_name', 'N/A')[:20] + '...' if transaction.get('target_hospital_name') and len(transaction.get('target_hospital_name', '')) > 20 else transaction.get('target_hospital_name', 'N/A'),
+                        transaction.get('status', ''),
+                        transaction.get('priority_level', 'N/A'),
+                        created_at,
+                        (transaction.get('notes', '')[:30] + '...') if transaction.get('notes') and len(transaction.get('notes', '')) > 30 else transaction.get('notes', '')
+                    ), tags=(tag,))
+                
+                if not transactions:
+                    messagebox.showinfo("No Data", "No transactions found with the selected filters.")
+            else:
+                messagebox.showerror("Error", f"Failed to load transactions: {response.json().get('message', 'Unknown error')}")
+        
+        except Exception as e:
+            messagebox.showerror("Connection Error", f"Cannot connect to server: {e}")
+    
+    def load_statistics(self, hospital_id):
+        """Load and display transaction statistics"""
+        try:
+            response = requests.get(f"{API_BASE_URL}/transactions/statistics/{hospital_id}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                stats = data.get("statistics", {})
+                
+                # Create statistics display
+                tk.Label(self.stats_frame, text="Transaction Statistics", 
+                         font=("Arial", 12, "bold"), bg="#f0f0f0").pack(pady=5)
+                
+                stats_grid = tk.Frame(self.stats_frame, bg="#f0f0f0")
+                stats_grid.pack(pady=5)
+                
+                # Display stats
+                stat_items = [
+                    ("Total Transactions", stats.get('total_transactions', 0)),
+                    ("Donations", stats.get('total_donations', 0)),
+                    ("Requests", stats.get('total_requests', 0)),
+                    ("Transfers", stats.get('total_transfers', 0)),
+                    ("Pending", stats.get('pending_transactions', 0)),
+                    ("Completed", stats.get('completed_transactions', 0)),
+                    ("Cancelled", stats.get('cancelled_transactions', 0))
+                ]
+                
+                for idx, (label, value) in enumerate(stat_items):
+                    row = idx // 4
+                    col = idx % 4
+                    
+                    stat_frame = tk.Frame(stats_grid, bg="#ffffff", relief="solid", borderwidth=1)
+                    stat_frame.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
+                    
+                    tk.Label(stat_frame, text=label, font=("Arial", 9), bg="#ffffff").pack()
+                    tk.Label(stat_frame, text=str(value), font=("Arial", 14, "bold"), 
+                             bg="#ffffff", fg="#007bff").pack()
+        
+        except Exception as e:
+            print(f"Error loading statistics: {e}")
+    
+    def sort_column(self, col, reverse):
+        """Sort treeview column"""
+        data = [(self.tree.set(child, col), child) for child in self.tree.get_children('')]
+        
+        # Try to sort numerically if possible
+        try:
+            data.sort(key=lambda x: float(x[0]), reverse=reverse)
+        except ValueError:
+            data.sort(reverse=reverse)
+        
+        # Rearrange items in sorted positions
+        for index, (val, child) in enumerate(data):
+            self.tree.move(child, '', index)
+        
+        # Toggle sort order for next click
+        self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))
+    
+    def export_to_csv(self):
+        """Export transaction history to CSV file"""
+        if not self.tree.get_children():
+            messagebox.showwarning("No Data", "No transactions to export.")
+            return
+        
+        try:
+            from datetime import datetime
+            import csv
+            
+            filename = f"transaction_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            filepath = os.path.join(os.path.expanduser("~"), "Desktop", filename)
+            
+            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write headers
+                headers = ["ID", "Type", "Blood Type", "Units", "Hospital", "Target Hospital", 
+                          "Status", "Priority", "Date", "Notes"]
+                writer.writerow(headers)
+                
+                # Write data
+                for item in self.tree.get_children():
+                    values = self.tree.item(item, 'values')
+                    writer.writerow(values)
+            
+            messagebox.showinfo("Success", f"Transactions exported to:\n{filepath}")
+        
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export: {e}")
 
 
 # =============================================
