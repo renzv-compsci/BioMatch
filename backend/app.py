@@ -18,7 +18,11 @@ from database import (
     get_transactions_by_hospital,
     get_all_transactions,
     update_transaction_status,
-    get_transaction_statistics
+    get_transaction_statistics,
+    add_donor,
+    delete_donor,
+    get_all_donors,
+    update_donor_eligibility,
 )
 
 app = Flask(__name__)
@@ -452,6 +456,35 @@ def get_statistics(hospital_id=None):
 def ping():
     """Health check endpoint"""
     return jsonify({"status": "ok", "message": "pong"}), 200
+
+@app.route('/donors', methods=['GET'])
+def list_donors():
+    # Suppose admin status is checked via session or a query param for demo
+    admin = request.args.get('admin') == "1"
+    donors = get_all_donors(admin_view=admin)
+    return jsonify(donors), 200
+
+@app.route('/donor', methods=['POST'])
+def create_donor():
+    data = request.json
+    donor_id = add_donor(
+        name=data['name'],
+        blood_type=data['blood_type'],
+        hospital_id=data['hospital_id'],
+        eligibility_status=data.get('eligibility_status', 'Eligible')
+    )
+    return jsonify({"donor_id": donor_id}), 201
+
+@app.route('/donor/<int:donor_id>/eligibility', methods=['PUT'])
+def set_donor_eligibility(donor_id):
+    data = request.json
+    updated = update_donor_eligibility(donor_id, data['eligibility_status'])
+    return jsonify({"updated": updated}), 200
+
+@app.route('/donor/<int:donor_id>', methods=['DELETE'])
+def remove_donor(donor_id):
+    deleted = delete_donor(donor_id)
+    return jsonify({"deleted": deleted}), 200
 
 
 if __name__ == '__main__':
