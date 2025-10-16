@@ -13,7 +13,12 @@ from database import (
     get_donations_by_hospital,
     get_inventory_by_hospital,
     search_blood_across_hospitals,
-    search_available_blood_units
+    search_available_blood_units,
+    create_transaction,
+    get_transactions_by_hospital,
+    get_all_transactions,
+    update_transaction_status,
+    get_transaction_statistics
 )
 
 app = Flask(__name__)
@@ -268,6 +273,22 @@ def request_blood():
     # Search for matching blood units across all hospitals
     matches = search_available_blood_units(blood_type, quantity_needed, priority_level)
     
+    # Create a transaction record for the blood request
+    # Note: We'll use hospital_id from request data if provided, otherwise None for now
+    requester_hospital_id = data.get('hospital_id')  # Optional field
+    
+    if requester_hospital_id:
+        create_transaction(
+            transaction_type='request',
+            blood_type=blood_type,
+            units=quantity_needed,
+            hospital_id=requester_hospital_id,
+            status='pending' if not matches else 'completed',
+            priority_level=priority_level,
+            required_date=required_date,
+            notes=f"Blood request for {quantity_needed} units of {blood_type}"
+        )
+    
     if not matches:
         return jsonify({
             "message": f"No matching blood units found for type {blood_type}",
@@ -291,6 +312,135 @@ def request_blood():
             "required_date": required_date
         },
         "results": matches
+    }), 200
+
+
+# =============================================
+# TRANSACTION HISTORY ENDPOINTS
+# =============================================
+
+@app.route('/transactions/<int:hospital_id>', methods=['GET'])
+def get_hospital_transactions(hospital_id):
+    """
+    Get transaction history for a specific hospital with optional filters.
+    
+    Query Parameters:
+        - type: Filter by transaction type ('donation', 'request', 'transfer')
+        - status: Filter by status ('pending', 'completed', 'cancelled')
+        - limit: Maximum number of records (default: 100)
+    
+    Example: /transactions/1?type=donation&status=completed&limit=50
+    """
+    transaction_type = request.args.get('type')
+    status = request.args.get('status')
+    limit = request.args.get('limit', 100)
+    
+    try:
+        limit = int(limit)
+        if limit <= 0 or limit > 500:
+            limit = 100
+    except ValueError:
+        limit = 100
+    
+    # Validate transaction_type if provided
+    if transaction_type and transaction_type not in ['donation', 'request', 'transfer']:
+        return jsonify({
+            "message": "Invalid transaction type. Must be 'donation', 'request', or 'transfer'"
+        }), 400
+    
+    # Validate status if provided
+    if status and status not in ['pending', 'completed', 'cancelled']:
+        return jsonify({
+            "message": "Invalid status. Must be 'pending', 'completed', or 'cancelled'"
+        }), 400
+    
+    transactions = get_transactions_by_hospital(hospital_id, transaction_type, status, limit)
+    
+    return jsonify({
+        "hospital_id": hospital_id,
+        "count": len(transactions),
+        "transactions": transactions
+    }), 200
+
+
+@app.route('/transactions', methods=['GET'])
+def get_all_transactions_endpoint():
+    """
+    Get all transactions across all hospitals (admin view).
+    
+    Query Parameters:
+        - type: Filter by transaction type
+        - status: Filter by status
+        - limit: Maximum number of records (default: 100)
+    """
+    transaction_type = request.args.get('type')
+    status = request.args.get('status')
+    limit = request.args.get('limit', 100)
+    
+    try:
+        limit = int(limit)
+        if limit <= 0 or limit > 500:
+            limit = 100
+    except ValueError:
+        limit = 100
+    
+    transactions = get_all_transactions(transaction_type, status, limit)
+    
+    return jsonify({
+        "count": len(transactions),
+        "transactions": transactions
+    }), 200
+
+
+@app.route('/transactions/<int:transaction_id>/status', methods=['PUT'])
+def update_transaction_status_endpoint(transaction_id):
+    """
+    Update the status of a transaction.
+    
+    Expected JSON body:
+    {
+        "status": "completed",
+        "notes": "Optional notes about the status change"
+    }
+    """
+    data = request.json
+    new_status = data.get('status')
+    notes = data.get('notes')
+    
+    if not new_status:
+        return jsonify({"message": "Status is required"}), 400
+    
+    if new_status not in ['pending', 'completed', 'cancelled']:
+        return jsonify({
+            "message": "Invalid status. Must be 'pending', 'completed', or 'cancelled'"
+        }), 400
+    
+    success = update_transaction_status(transaction_id, new_status, notes)
+    
+    if success:
+        return jsonify({
+            "message": "Transaction status updated successfully",
+            "transaction_id": transaction_id,
+            "new_status": new_status
+        }), 200
+    else:
+        return jsonify({"message": "Transaction not found or update failed"}), 404
+
+
+@app.route('/transactions/statistics', methods=['GET'])
+@app.route('/transactions/statistics/<int:hospital_id>', methods=['GET'])
+def get_statistics(hospital_id=None):
+    """
+    Get transaction statistics.
+    
+    If hospital_id is provided: Returns stats for that hospital
+    If hospital_id is not provided: Returns system-wide stats
+    """
+    stats = get_transaction_statistics(hospital_id)
+    
+    return jsonify({
+        "hospital_id": hospital_id,
+        "statistics": stats
     }), 200
 
 
