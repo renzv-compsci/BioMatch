@@ -549,7 +549,7 @@ def update_transaction_status(transaction_id, new_status, notes=None):
     finally:
         conn.close()
 
-
+12
 def get_transaction_statistics(hospital_id=None):
     """
     Get transaction statistics for analytics.
@@ -601,3 +601,9 @@ def get_transaction_statistics(hospital_id=None):
     conn.close()
     
     return dict(stats) if stats else {}
+
+if __name__ == "__main__":
+    initialize_db()
+    hospital_id = register_hospital("Test Hospital", "123 Test St", "Dr. Test", "09123456789")
+    print("Hospital ID:", hospital_id)
+    print("All hospitals:", get_all_hospitals())
