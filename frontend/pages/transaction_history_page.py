@@ -18,7 +18,7 @@ class TransactionHistoryPage(BasePage):
         container.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Header within content area
-        ttk.Label(container, text="� Transaction History", 
+        ttk.Label(container, text="📋 Transaction History", 
                  font=("Segoe UI", 18, "bold"),
                  foreground=BioMatchTheme.PRIMARY).pack(anchor="w", pady=(0, 20))
         
@@ -152,9 +152,9 @@ class TransactionHistoryPage(BasePage):
                 
                 if isinstance(blood_requests, list) and len(blood_requests) > 0:
                     # Display statistics
-                    pending_count = sum(1 for r in blood_requests if r.get('status') == 'pending')
-                    approved_count = sum(1 for r in blood_requests if r.get('status') == 'approved')
-                    rejected_count = sum(1 for r in blood_requests if r.get('status') == 'rejected')
+                    pending_count = sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'pending')
+                    approved_count = sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'approved')
+                    rejected_count = sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'rejected')
                     
                     UIComponents.create_stat_card(self.stats_frame, "Total Requests", 
                                                len(blood_requests), BioMatchTheme.PRIMARY)
@@ -165,19 +165,27 @@ class TransactionHistoryPage(BasePage):
                     UIComponents.create_stat_card(self.stats_frame, "Rejected", 
                                                rejected_count, BioMatchTheme.DANGER)
                     
-                    # Populate table
+                    # Populate table with all requests
                     for req in blood_requests:
-                        status = req.get('status', 'pending')
+                        status = str(req.get('status', 'pending')).lower()
                         tag = status
+                        
+                        # Get hospital name or use ID as fallback
+                        hospital_name = req.get('requesting_hospital_name', f"Hospital {req.get('requesting_hospital_id', 'Unknown')}")
+                        
+                        # Format date
+                        date_str = req.get('created_at', '')
+                        if date_str:
+                            date_str = date_str[:16] if isinstance(date_str, str) else str(date_str)[:16]
                         
                         self.tree.insert("", tk.END, values=(
                             req.get('id', ''),
-                            req.get('requesting_hospital_name', 'Unknown'),
+                            hospital_name,
                             req.get('blood_type', ''),
                             req.get('units_requested', ''),
                             req.get('priority_level', ''),
                             status.upper(),
-                            req.get('created_at', '')[:16] if req.get('created_at') else ''
+                            date_str
                         ), tags=(tag,), iid=f"req_{req.get('id', '')}")
                 else:
                     # No requests found

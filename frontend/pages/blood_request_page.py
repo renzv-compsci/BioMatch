@@ -61,9 +61,9 @@ class BloodRequestPage(BasePage):
         # Priority
         ttk.Label(form_content, text="Priority:").grid(row=2, column=2, sticky="w", pady=10, padx=(20, 20))
         self.priority_combo = ttk.Combobox(form_content, 
-                                          values=["Normal", "Urgent", "Emergency"],
+                                          values=["Low", "Medium", "High", "Critical"],
                                           state="readonly", width=18)
-        self.priority_combo.set("Normal")
+        self.priority_combo.set("Medium")
         self.priority_combo.grid(row=2, column=3, sticky="w", pady=10)
         
         # Purpose/Reason
@@ -71,13 +71,19 @@ class BloodRequestPage(BasePage):
         self.purpose_text = tk.Text(form_content, height=4, width=40)
         self.purpose_text.grid(row=3, column=1, columnspan=3, sticky="ew", pady=10)
         
+        # Required Date
+        ttk.Label(form_content, text="Required Date:").grid(row=4, column=0, sticky="w", pady=10, padx=(0, 20))
+        self.required_date_entry = ttk.Entry(form_content, width=20)
+        self.required_date_entry.insert(0, "YYYY-MM-DD")
+        self.required_date_entry.grid(row=4, column=1, sticky="w", pady=10)
+        
         # Source Hospital Selection
-        ttk.Label(form_content, text="Source Hospital:").grid(row=4, column=0, sticky="w", pady=10, padx=(0, 20))
-        self.source_hospital_combo = ttk.Combobox(form_content, state="normal", width=30)
-        self.source_hospital_combo.grid(row=4, column=1, sticky="w", pady=10)
+        ttk.Label(form_content, text="Source Hospital:").grid(row=4, column=2, sticky="w", pady=10, padx=(20, 20))
+        self.source_hospital_combo = ttk.Combobox(form_content, state="normal", width=20)
+        self.source_hospital_combo.grid(row=4, column=3, sticky="w", pady=10)
         
         ttk.Button(form_content, text="Search Available Hospitals",
-                 command=self.search_hospitals).grid(row=4, column=2, columnspan=2, sticky="e", padx=20)
+                 command=self.search_hospitals).grid(row=5, column=0, columnspan=4, sticky="w", pady=10)
         
         # Action buttons
         button_frame = ttk.Frame(form_frame)
@@ -198,32 +204,37 @@ class BloodRequestPage(BasePage):
         doctor = self.doctor_entry.get().strip()
         priority = self.priority_combo.get()
         purpose = self.purpose_text.get("1.0", tk.END).strip()
-        source_hospital = self.source_hospital_combo.get()
+        required_date = self.required_date_entry.get().strip()
         
-        if not all([blood_type, units, patient_name, patient_id, doctor, purpose, source_hospital]):
+        # Validate required fields
+        if not all([blood_type, units, patient_name, patient_id, doctor, priority, required_date]):
             messagebox.showerror("Error", "All fields are required!")
+            return
+        
+        if required_date == "YYYY-MM-DD":
+            messagebox.showerror("Error", "Please enter a valid date in YYYY-MM-DD format!")
             return
         
         try:
             response = requests.post(f"{API_BASE_URL}/request_blood", json={
                 "blood_type": blood_type,
-                "units_requested": int(units),
+                "quantity_needed": int(units),
+                "priority_level": priority,
+                "required_date": required_date,
                 "patient_name": patient_name,
                 "patient_id": patient_id,
                 "requesting_doctor": doctor,
-                "priority": priority,
                 "purpose": purpose,
-                "requesting_hospital_id": self.controller.current_user['hospital_id'],
-                "source_hospital": source_hospital
+                "hospital_id": self.controller.current_user['hospital_id']
             })
             
-            if response.status_code == 201:
-                data = response.json()
-                messagebox.showinfo("Success", f"Blood request submitted! Request ID: {data.get('request_id', 'N/A')}")
+            if response.status_code == 200:
+                messagebox.showinfo("Success", "Blood request submitted successfully!")
                 self.clear_form()
                 self.load_recent_requests()
             else:
-                messagebox.showerror("Error", response.json().get("message", "Request failed"))
+                error_msg = response.json().get("message", "Request failed") if response.text else "Request failed"
+                messagebox.showerror("Error", error_msg)
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number of units.")
         except Exception as e:
@@ -239,12 +250,20 @@ class BloodRequestPage(BasePage):
             self.status_tree.delete(item)
         
         try:
+            # Use correct endpoint that matches backend
+            hospital_id = self.controller.current_user.get('hospital_id')
+            if not hospital_id:
+                return
+            
             response = requests.get(
-                f"{API_BASE_URL}/requests/{self.controller.current_user['hospital_id']}"
+                f"{API_BASE_URL}/hospital/{hospital_id}/requests"
             )
             
             if response.status_code == 200:
-                requests_data = response.json()
+                data = response.json()
+                # Handle both dict and list responses
+                requests_data = data.get('requests', []) if isinstance(data, dict) else data
+                
                 for request in requests_data[:10]:  # Show last 10 requests
                     date = request.get('created_at', '')
                     if date:
@@ -254,13 +273,18 @@ class BloodRequestPage(BasePage):
                         except:
                             pass
                     
+                    # Use quantity_needed or units_requested with fallback
+                    qty = request.get('quantity_needed') or request.get('units_requested', '')
+                    
                     self.status_tree.insert("", tk.END, values=(
                         request.get('id', ''),
                         request.get('blood_type', ''),
-                        request.get('units_requested', ''),
-                        request.get('status', 'pending'),
+                        qty,
+                        request.get('status', 'pending').upper(),
                         date
                     ))
+            else:
+                print(f"Error loading requests: {response.status_code}")
         except Exception as e:
             print(f"Error loading requests: {e}")
     
@@ -271,6 +295,8 @@ class BloodRequestPage(BasePage):
         self.patient_name_entry.delete(0, tk.END)
         self.patient_id_entry.delete(0, tk.END)
         self.doctor_entry.delete(0, tk.END)
-        self.priority_combo.set("Normal")
+        self.priority_combo.set("Medium")
         self.purpose_text.delete("1.0", tk.END)
+        self.required_date_entry.delete(0, tk.END)
+        self.required_date_entry.insert(0, "YYYY-MM-DD")
         self.source_hospital_combo.set("")
