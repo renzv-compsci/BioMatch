@@ -15,6 +15,19 @@ def get_inventory_by_hospital(hospital_id):
     conn.close()
     return inventory
 
+def get_inventory_by_hospital_all(hospital_id):
+    """Get inventory for a specific hospital"""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM inventory WHERE hospital_id = ?",
+        (hospital_id,)
+    )
+    inventory = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return inventory
+
 def search_blood_across_hospitals(blood_type, units_needed):
     """Search for compatible blood types across all hospitals"""
     conn = sqlite3.connect(DB_NAME)

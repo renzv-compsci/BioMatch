@@ -1,3 +1,7 @@
+"""
+Database package for BioMatch backend
+"""
+
 from .db_init import initialize_db
 from .hospital import register_hospital, get_all_hospitals, get_hospital_by_id
 from .user import create_user, authenticate_user
