@@ -31,7 +31,8 @@ class AddDonationPage(ttk.Frame):
         button_frame = ttk.Frame(self)
         button_frame.pack(pady=20)
         ttk.Button(button_frame, text="Submit Donation", command=self.add_donation).grid(row=0, column=0, padx=10)
-        ttk.Button(button_frame, text="Back to Dashboard", command=lambda: controller.show_frame("DashboardPage")).grid(row=0, column=1, padx=10)
+        ttk.Button(button_frame, text="Refresh Data", command=self.refresh_data, style="Primary.TButton").grid(row=0, column=1, padx=10)
+        ttk.Button(button_frame, text="Back to Dashboard", command=lambda: controller.show_frame("DashboardPage")).grid(row=0, column=2, padx=10)
     
     def add_donation(self):
         if not self.controller.current_user:
@@ -57,10 +58,22 @@ class AddDonationPage(ttk.Frame):
             if response.status_code == 201:
                 messagebox.showinfo("Success", "Donation added successfully!")
                 self.clear_form()
+                self.refresh_data()
             else:
                 messagebox.showerror("Error", response.json().get("message", "Failed to add donation"))
         except Exception as e:
             messagebox.showerror("Connection Error", f"Cannot connect to server: {e}")
+    
+    def refresh_data(self):
+        """Refresh dashboard data"""
+        try:
+            if "DashboardPage" in self.controller.frames:
+                self.controller.frames["DashboardPage"].refresh_data()
+            if "ViewInventoryPage" in self.controller.frames:
+                self.controller.frames["ViewInventoryPage"].load_inventory()
+            messagebox.showinfo("Success", "Data refreshed!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to refresh data: {e}")
     
     def clear_form(self):
         self.donor_name_entry.delete(0, tk.END)
