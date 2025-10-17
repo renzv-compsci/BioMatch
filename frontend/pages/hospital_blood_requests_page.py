@@ -34,7 +34,7 @@ class HospitalBloodRequestsPage(BasePage):
         request_card.pack(fill="x", pady=(0, 20))
         
         form_frame = ttk.Frame(form_content)
-        form_frame.pack(fill="x", pady=15)
+        form_frame.pack(fill="x", pady=15, padx=10)
         
         # Form fields
         ttk.Label(form_frame, text="Blood Type:", font=("Segoe UI", 11)).grid(row=0, column=0, padx=5)
@@ -219,7 +219,8 @@ class HospitalBloodRequestsPage(BasePage):
             if quantity_int <= 0:
                 messagebox.showerror("Error", "Quantity must be positive!")
                 return
-                
+            
+            # Use /blood_requests endpoint with correct field names
             response = requests.post(f"{API_BASE_URL}/blood_requests", json={
                 "blood_type": blood_type,
                 "units_requested": quantity_int,
@@ -232,11 +233,13 @@ class HospitalBloodRequestsPage(BasePage):
                 self.clear_form()
                 self.load_requests()
             else:
-                error_msg = response.json().get('error', 'Failed to submit request')
+                error_msg = response.json().get('error', 'Failed to submit request') if response.text else 'Unknown error'
                 messagebox.showerror("Error", error_msg)
                 
         except ValueError:
             messagebox.showerror("Error", "Quantity must be a number!")
+        except requests.RequestException as e:
+            messagebox.showerror("Error", f"Connection error: {e}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to submit request: {e}")
             
