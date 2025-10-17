@@ -41,7 +41,7 @@ def get_donations_by_hospital(hospital_id):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT * FROM donations WHERE hospital_id = ? ORDER BY date DESC",
+        "SELECT * FROM donations WHERE hospital_id = ? ORDER BY donation_date DESC",
         (hospital_id,)
     )
     donations = [dict(row) for row in cursor.fetchall()]
