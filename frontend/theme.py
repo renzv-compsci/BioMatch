@@ -15,6 +15,8 @@ class BioMatchTheme:
     SUCCESS = "#4CAF50"
     WARNING = "#FFC107"
     DANGER = "#F44336"
+    INFO = "#00BCD4"
+    SIDEBAR_BG = "#1565C0"  # Darker blue for sidebar
     
     # Font settings
     FONT_FAMILY = "Segoe UI"  # Cross-platform font that looks modern
@@ -153,6 +155,18 @@ class UIComponents:
                  background=[('active', UIComponents.SECONDARY_COLOR)],
                  foreground=[('active', 'white')])
         
+        # Success button style
+        style.configure('Success.TButton', font=('Segoe UI', 10, 'bold'))
+        style.map('Success.TButton',
+                 background=[('active', '#388E3C')],
+                 foreground=[('active', 'white')])
+        
+        # Secondary button style
+        style.configure('Secondary.TButton', font=('Segoe UI', 10))
+        style.map('Secondary.TButton',
+                 background=[('active', '#9E9E9E')],
+                 foreground=[('active', 'white')])
+        
         # Header label style
         style.configure('Header.TLabel', font=('Segoe UI', 24, 'bold'), 
                        foreground=UIComponents.TEXT_COLOR)
@@ -211,20 +225,23 @@ class UIComponents:
     
     @staticmethod
     def create_stat_card(parent, label, value, color=None):
-        """Create a statistics card"""
+        """Create a statistics card and return the value label for updates"""
         if color is None:
             color = UIComponents.PRIMARY_COLOR
         
-        stat_frame = ttk.Frame(parent)
-        stat_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
-        
-        value_label = tk.Label(stat_frame, text=str(value), font=('Segoe UI', 24, 'bold'),
-                              fg=color, bg=UIComponents.BACKGROUND_COLOR)
-        value_label.pack()
+        stat_frame = tk.Frame(parent, bg="white", relief="solid", bd=1)
+        stat_frame.pack_propagate(False)
+        stat_frame.config(width=180, height=100)
         
         label_text = tk.Label(stat_frame, text=label, font=('Segoe UI', 10),
-                             fg=UIComponents.SUBTITLE_COLOR, bg=UIComponents.BACKGROUND_COLOR)
-        label_text.pack()
+                             fg=UIComponents.SUBTITLE_COLOR, bg="white")
+        label_text.pack(pady=(15, 5))
+        
+        value_label = tk.Label(stat_frame, text=str(value), font=('Segoe UI', 24, 'bold'),
+                              fg=color, bg="white")
+        value_label.pack()
+        
+        return stat_frame
     
     @staticmethod
     def create_input_field(parent, label_text, row, column, width=30, is_password=False):

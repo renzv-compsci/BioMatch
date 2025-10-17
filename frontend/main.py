@@ -26,7 +26,10 @@ from frontend.pages import (
     HospitalBloodRequestsPage,
     HospitalDonationsPage,
     HospitalChangePasswordPage,
-    HospitalInventoryPage
+    HospitalInventoryPage,
+    BloodRequestPage,
+    UnifiedLoginPage,
+    UnifiedDashboardPage
 )
 
 API_BASE_URL = "http://127.0.0.1:5000"
@@ -60,11 +63,12 @@ class BioMatchApp:
         self.frames = {}
         
         # Initialize all pages and place them in the same grid cell
-        for PageClass in (WelcomePage, RegisterHospitalPage, RegisterUserPage, LoginPage, 
-                          DashboardPage, AddDonationPage, ViewInventoryPage, SearchBloodPage,
-                          TransactionHistoryPage, AdminDashboardPage, HospitalLoginPage,
-                          HospitalDashboardPage, HospitalBloodRequestsPage, HospitalDonationsPage,
-                          HospitalChangePasswordPage, HospitalInventoryPage):
+        for PageClass in (WelcomePage, RegisterHospitalPage, RegisterUserPage, 
+                          UnifiedLoginPage, UnifiedDashboardPage,
+                          AdminDashboardPage, BloodRequestPage,
+                          HospitalBloodRequestsPage, HospitalDonationsPage,
+                          HospitalChangePasswordPage, HospitalInventoryPage,
+                          TransactionHistoryPage):
             page_name = PageClass.__name__
             frame = PageClass(parent=self.container, controller=self)
             self.frames[page_name] = frame
@@ -82,19 +86,23 @@ class BioMatchApp:
         frame = self.frames[page_name]
         frame.tkraise()
         
-        # Refresh data for certain pages
-        if page_name == "DashboardPage" and self.current_user:
-            self.frames["DashboardPage"].refresh_data()
-        elif page_name == "ViewInventoryPage" and self.current_user:
-            self.frames["ViewInventoryPage"].load_inventory()
-        elif page_name == "TransactionHistoryPage" and self.current_user:
-            self.frames["TransactionHistoryPage"].load_requests()
+        # Refresh data for pages that need it
+        if hasattr(frame, 'refresh_data') and self.current_user:
+            frame.refresh_data()
+        
+        # Legacy support for old pages
+        if page_name == "ViewInventoryPage" and self.current_user:
+            if hasattr(self.frames["ViewInventoryPage"], 'load_inventory'):
+                self.frames["ViewInventoryPage"].load_inventory()
         elif page_name == "AdminDashboardPage" and self.current_user:
-            self.frames["AdminDashboardPage"].load_hospitals_data()
+            if hasattr(self.frames["AdminDashboardPage"], 'load_hospitals_data'):
+                self.frames["AdminDashboardPage"].load_hospitals_data()
         elif page_name == "HospitalDashboardPage" and self.current_hospital:
-            self.frames["HospitalDashboardPage"].load_hospital_data()
+            if hasattr(self.frames["HospitalDashboardPage"], 'load_hospital_data'):
+                self.frames["HospitalDashboardPage"].load_hospital_data()
         elif page_name == "HospitalBloodRequestsPage" and self.current_hospital:
-            self.frames["HospitalBloodRequestsPage"].load_requests()
+            if hasattr(self.frames["HospitalBloodRequestsPage"], 'load_requests'):
+                self.frames["HospitalBloodRequestsPage"].load_requests()
     
     def exit_fullscreen(self):
         self.root.attributes('-fullscreen', False)

@@ -2,35 +2,30 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import requests
 from datetime import datetime
+from frontend.pages.base_page import BasePage
+from frontend.theme import BioMatchTheme
 
 API_BASE_URL = "http://127.0.0.1:5000"
 
-class BloodRequestPage(ttk.Frame):
+class BloodRequestPage(BasePage):
     def __init__(self, parent, controller):
-        ttk.Frame.__init__(self, parent)
-        self.controller = controller
+        BasePage.__init__(self, parent, controller)
         
-        # Header
-        header_frame = ttk.Frame(self)
-        header_frame.pack(fill="x", padx=20, pady=20)
+        # Create navigation
+        self.refresh_data()
         
-        ttk.Label(header_frame, text="Request Blood", 
-                style="Header.TLabel").pack(side="left")
-        
-        ttk.Button(header_frame, text="Back to Dashboard",
-                 command=lambda: controller.show_frame("DashboardPage")).pack(side="right", padx=5)
-        
-        # Main container
-        main_container = ttk.Frame(self)
-        main_container.pack(fill="both", expand=True, padx=20, pady=10)
+        # Main container with padding
+        container = ttk.Frame(self.main_content)
+        container.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Request form
-        form_frame = ttk.Frame(main_container, relief="solid", borderwidth=1)
+        form_frame = ttk.Frame(container, relief="solid", borderwidth=1)
         form_frame.pack(fill="x", pady=10)
         
         # Title
         ttk.Label(form_frame, text="Blood Request Form", 
-                style="Subheader.TLabel").pack(anchor="w", padx=15, pady=(15, 10))
+                font=("Segoe UI", 14, "bold"),
+                foreground=BioMatchTheme.PRIMARY).pack(anchor="w", padx=15, pady=(15, 10))
         
         # Form content
         form_content = ttk.Frame(form_frame)
@@ -95,11 +90,12 @@ class BloodRequestPage(ttk.Frame):
                  command=self.clear_form).pack(side="left", padx=5)
         
         # Request Status
-        status_frame = ttk.Frame(main_container, relief="solid", borderwidth=1)
+        status_frame = ttk.Frame(container, relief="solid", borderwidth=1)
         status_frame.pack(fill="both", expand=True, pady=10)
         
         ttk.Label(status_frame, text="Recent Requests", 
-                style="Subheader.TLabel").pack(anchor="w", padx=15, pady=(15, 10))
+                font=("Segoe UI", 14, "bold"),
+                foreground=BioMatchTheme.PRIMARY).pack(anchor="w", padx=15, pady=(15, 10))
         
         # Status table container with grid
         table_container = ttk.Frame(status_frame)
@@ -134,6 +130,29 @@ class BloodRequestPage(ttk.Frame):
         # Store hospital data
         self.hospitals = []
         self.load_recent_requests()
+    
+    def refresh_data(self):
+        """Refresh navigation"""
+        if not self.controller.current_user:
+            return
+        
+        user = self.controller.current_user
+        hospital = self.controller.current_hospital
+        
+        # Update header info
+        if hospital:
+            role_text = user.get('role', 'user').replace('_', ' ').title()
+            self.user_info_label.config(text=f"{role_text} | {hospital['name']}")
+        
+        # Navigation items
+        nav_items = [
+            ("📊", "Dashboard", "UnifiedDashboardPage", BioMatchTheme.PRIMARY),
+            ("🩸", "Request Blood", "BloodRequestPage", BioMatchTheme.DANGER),
+            ("📋", "Blood Requests", "HospitalBloodRequestsPage", BioMatchTheme.WARNING),
+            ("📜", "Transactions", "TransactionHistoryPage", BioMatchTheme.INFO),
+        ]
+        
+        self.create_nav_buttons(nav_items)
     
     def search_hospitals(self):
         """Search for hospitals with available blood"""

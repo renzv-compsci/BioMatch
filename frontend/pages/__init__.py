@@ -16,6 +16,10 @@ from .hospital_blood_requests_page import HospitalBloodRequestsPage
 from .hospital_donations_page import HospitalDonationsPage
 from .hospital_change_password_page import HospitalChangePasswordPage
 from .hospital_inventory_page import HospitalInventoryPage
+from .blood_request_page import BloodRequestPage
+from .base_page import BasePage
+from .unified_login_page import UnifiedLoginPage
+from .unified_dashboard_page import UnifiedDashboardPage
 
 __all__ = [
     'WelcomePage',
@@ -33,5 +37,9 @@ __all__ = [
     'HospitalBloodRequestsPage',
     'HospitalDonationsPage',
     'HospitalChangePasswordPage',
-    'HospitalInventoryPage'
+    'HospitalInventoryPage',
+    'BloodRequestPage',
+    'BasePage',
+    'UnifiedLoginPage',
+    'UnifiedDashboardPage'
 ]

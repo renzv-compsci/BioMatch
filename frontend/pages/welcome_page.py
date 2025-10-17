@@ -15,10 +15,11 @@ class WelcomePage(ttk.Frame):
         button_frame.pack(pady=50)
         
         ttk.Button(button_frame, text="Register New Hospital", width=25,
-                   command=lambda: controller.show_frame("RegisterHospitalPage")).pack(pady=10)
+                   command=lambda: controller.show_frame("RegisterHospitalPage"),
+                   style="Primary.TButton").pack(pady=10)
         ttk.Button(button_frame, text="Register User Account", width=25,
-                   command=lambda: controller.show_frame("RegisterUserPage")).pack(pady=10)
-        ttk.Button(button_frame, text="Login", width=25,
-                   command=lambda: controller.show_frame("LoginPage")).pack(pady=10)
-        ttk.Button(button_frame, text="Hospital Portal Login", width=25,
-                   command=lambda: controller.show_frame("HospitalLoginPage")).pack(pady=10)
+                   command=lambda: controller.show_frame("RegisterUserPage"),
+                   style="Primary.TButton").pack(pady=10)
+        ttk.Button(button_frame, text="🚪 Login to Portal", width=25,
+                   command=lambda: controller.show_frame("UnifiedLoginPage"),
+                   style="Primary.TButton").pack(pady=10)

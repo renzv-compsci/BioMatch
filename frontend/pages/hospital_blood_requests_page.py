@@ -2,37 +2,36 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import requests
 from frontend.theme import UIComponents, BioMatchTheme
+from .base_page import BasePage
 
 API_BASE_URL = "http://127.0.0.1:5000"
 
-class HospitalBloodRequestsPage(ttk.Frame):
+class HospitalBloodRequestsPage(BasePage):
     def __init__(self, parent, controller):
-        ttk.Frame.__init__(self, parent)
-        self.controller = controller
+        BasePage.__init__(self, parent, controller)
         
-        # Header
-        header_frame = ttk.Frame(self)
-        header_frame.pack(fill="x", padx=30, pady=20)
+        # Create navigation
+        self.refresh_data()
         
-        ttk.Button(header_frame, text="← Back", 
-                  command=lambda: controller.show_frame("HospitalDashboardPage"),
-                  style="Outline.TButton").pack(side="left")
-        ttk.Label(header_frame, text="🩸 Blood Requests", 
-                 style="Header.TLabel").pack(side="left", padx=20)
-
-        ttk.Button(header_frame, text="🔄 Refresh", command=self.load_requests,
-                  style="Primary.TButton").pack(side="right", padx=5)
+        # Main container (uses self.main_content from BasePage)
+        container = ttk.Frame(self.main_content)
+        container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Header within content area
+        ttk.Label(container, text="🩸 Blood Requests Management", 
+                 font=("Segoe UI", 18, "bold"),
+                 foreground=BioMatchTheme.PRIMARY).pack(anchor="w", pady=(0, 20))
         
         # Stats frame
-        stats_card, stats_content = UIComponents.create_card(self, "Request Statistics")
-        stats_card.pack(fill="x", padx=30, pady=(0, 10))
+        stats_card, stats_content = UIComponents.create_card(container, "Request Statistics")
+        stats_card.pack(fill="x", pady=(0, 10))
         
         self.stats_frame = ttk.Frame(stats_content)
         self.stats_frame.pack(fill="x", pady=5)
         
         # New request form
-        request_card, form_content = UIComponents.create_card(self, "New Blood Request")
-        request_card.pack(fill="x", padx=30, pady=(0, 20))
+        request_card, form_content = UIComponents.create_card(container, "New Blood Request")
+        request_card.pack(fill="x", pady=(0, 20))
         
         form_frame = ttk.Frame(form_content)
         form_frame.pack(fill="x", pady=15)
@@ -58,8 +57,8 @@ class HospitalBloodRequestsPage(ttk.Frame):
                   style="Primary.TButton").grid(row=0, column=6, padx=20)
         
         # Requests table
-        table_card, table_content = UIComponents.create_card(self, "My Blood Requests")
-        table_card.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        table_card, table_content = UIComponents.create_card(container, "All Blood Requests")
+        table_card.pack(fill="both", expand=True)
         
         self.tree = UIComponents.create_table(
             table_content, 
@@ -77,6 +76,29 @@ class HospitalBloodRequestsPage(ttk.Frame):
         
         # Load initial data
         self.after(100, self.load_requests)
+    
+    def refresh_data(self):
+        """Refresh navigation"""
+        if not self.controller.current_user:
+            return
+        
+        user = self.controller.current_user
+        hospital = self.controller.current_hospital
+        
+        # Update header info
+        if hospital:
+            role_text = user.get('role', 'user').replace('_', ' ').title()
+            self.user_info_label.config(text=f"{role_text} | {hospital['name']}")
+        
+        # Navigation items
+        nav_items = [
+            ("📊", "Dashboard", "UnifiedDashboardPage", BioMatchTheme.PRIMARY),
+            ("🩸", "Request Blood", "BloodRequestPage", BioMatchTheme.DANGER),
+            ("📋", "Blood Requests", "HospitalBloodRequestsPage", BioMatchTheme.WARNING),
+            ("📜", "Transactions", "TransactionHistoryPage", BioMatchTheme.INFO),
+        ]
+        
+        self.create_nav_buttons(nav_items)
     
     def load_requests(self):
         """Load blood requests from backend"""

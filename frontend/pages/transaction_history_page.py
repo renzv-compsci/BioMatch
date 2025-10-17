@@ -2,30 +2,29 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 import requests
 from frontend.theme import UIComponents, BioMatchTheme
+from .base_page import BasePage
 
 API_BASE_URL = "http://127.0.0.1:5000"
 
-class TransactionHistoryPage(ttk.Frame):
+class TransactionHistoryPage(BasePage):
     def __init__(self, parent, controller):
-        ttk.Frame.__init__(self, parent)
-        self.controller = controller
+        BasePage.__init__(self, parent, controller)
         
-        # Header
-        header_frame = ttk.Frame(self)
-        header_frame.pack(fill="x", padx=30, pady=20)
+        # Create navigation
+        self.refresh_data()
         
-        ttk.Button(header_frame, text="← Back", 
-                  command=lambda: controller.show_frame("DashboardPage"),
-                  style="Outline.TButton").pack(side="left")
-        ttk.Label(header_frame, text="📋 Blood Requests", 
-                 style="Header.TLabel").pack(side="left", padx=20)
+        # Main container (uses self.main_content from BasePage)
+        container = ttk.Frame(self.main_content)
+        container.pack(fill="both", expand=True, padx=10, pady=10)
         
-        ttk.Button(header_frame, text="🔄 Refresh", command=self.load_requests,
-                  style="Primary.TButton").pack(side="right", padx=5)
+        # Header within content area
+        ttk.Label(container, text="� Transaction History", 
+                 font=("Segoe UI", 18, "bold"),
+                 foreground=BioMatchTheme.PRIMARY).pack(anchor="w", pady=(0, 20))
         
         # Filter card
-        filter_card, filter_content = UIComponents.create_card(self, "Filter Requests")
-        filter_card.pack(fill="x", padx=30, pady=(0, 20))
+        filter_card, filter_content = UIComponents.create_card(container, "Filter Transactions")
+        filter_card.pack(fill="x", pady=(0, 20))
         
         filter_frame = ttk.Frame(filter_content)
         filter_frame.pack(fill="x", pady=10)
@@ -46,12 +45,12 @@ class TransactionHistoryPage(ttk.Frame):
                   style="Primary.TButton").grid(row=0, column=4, padx=20)
         
         # Stats frame
-        self.stats_frame = ttk.Frame(self)
-        self.stats_frame.pack(fill="x", padx=30, pady=10)
+        self.stats_frame = ttk.Frame(container)
+        self.stats_frame.pack(fill="x", pady=10)
         
         # Requests table with action buttons
-        table_card, table_content = UIComponents.create_card(self, "Blood Requests from Hospitals")
-        table_card.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        table_card, table_content = UIComponents.create_card(container, "Transaction Records")
+        table_card.pack(fill="both", expand=True, pady=(0, 20))
         
         # Table container (using pack layout)
         table_container = ttk.Frame(table_content)
@@ -94,6 +93,29 @@ class TransactionHistoryPage(ttk.Frame):
         # Load initial data
         self.selected_request = None
         self.after(100, self.load_requests)
+    
+    def refresh_data(self):
+        """Refresh navigation"""
+        if not self.controller.current_user:
+            return
+        
+        user = self.controller.current_user
+        hospital = self.controller.current_hospital
+        
+        # Update header info
+        if hospital:
+            role_text = user.get('role', 'user').replace('_', ' ').title()
+            self.user_info_label.config(text=f"{role_text} | {hospital['name']}")
+        
+        # Navigation items
+        nav_items = [
+            ("📊", "Dashboard", "UnifiedDashboardPage", BioMatchTheme.PRIMARY),
+            ("🩸", "Request Blood", "BloodRequestPage", BioMatchTheme.DANGER),
+            ("📋", "Blood Requests", "HospitalBloodRequestsPage", BioMatchTheme.WARNING),
+            ("📜", "Transactions", "TransactionHistoryPage", BioMatchTheme.INFO),
+        ]
+        
+        self.create_nav_buttons(nav_items)
     
     def load_requests(self):
         """Load blood requests from all hospitals"""
