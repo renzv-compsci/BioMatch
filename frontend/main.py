@@ -38,7 +38,8 @@ class BioMatchApp:
     def __init__(self, root):
         self.root = root
         self.root.title("BioMatch - Blood Management System")
-        self.root.attributes('-fullscreen', True)
+        self.root.geometry("1400x900")
+        self.root.state('zoomed')  # Maximized window instead of fullscreen
         
         # Apply theme
         BioMatchTheme.apply_theme(root)
@@ -76,10 +77,6 @@ class BioMatchApp:
         
         # Show welcome page first
         self.show_frame("WelcomePage")
-        
-        # Modern exit button
-        exit_btn = ttk.Button(root, text="✕ Exit Fullscreen", command=self.exit_fullscreen, style="Outline.TButton")
-        exit_btn.place(relx=1.0, rely=0, anchor='ne', x=-10, y=10)
     
     def show_frame(self, page_name):
         """Switch to a specific page"""
@@ -103,9 +100,6 @@ class BioMatchApp:
         elif page_name == "HospitalBloodRequestsPage" and self.current_hospital:
             if hasattr(self.frames["HospitalBloodRequestsPage"], 'load_requests'):
                 self.frames["HospitalBloodRequestsPage"].load_requests()
-    
-    def exit_fullscreen(self):
-        self.root.attributes('-fullscreen', False)
     
     def set_current_user(self, user_data):
         """Store logged-in user information"""

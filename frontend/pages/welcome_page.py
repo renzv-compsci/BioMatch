@@ -14,12 +14,9 @@ class WelcomePage(ttk.Frame):
         button_frame = ttk.Frame(self)
         button_frame.pack(pady=50)
         
-        ttk.Button(button_frame, text="Register New Hospital", width=25,
+        ttk.Button(button_frame, text="📝 Register", width=25,
                    command=lambda: controller.show_frame("RegisterHospitalPage"),
                    style="Primary.TButton").pack(pady=10)
-        ttk.Button(button_frame, text="Register User Account", width=25,
-                   command=lambda: controller.show_frame("RegisterUserPage"),
-                   style="Primary.TButton").pack(pady=10)
-        ttk.Button(button_frame, text="🚪 Login to Portal", width=25,
+        ttk.Button(button_frame, text="🚪 Login", width=25,
                    command=lambda: controller.show_frame("UnifiedLoginPage"),
                    style="Primary.TButton").pack(pady=10)

@@ -856,6 +856,103 @@ def get_incoming_requests(hospital_id):
         return jsonify({'error': str(e)}), 500
 
 
+# Get completed blood request transactions for a hospital (both sent and received)
+@app.route('/hospital/<int:hospital_id>/transactions', methods=['GET'])
+def get_blood_request_transactions(hospital_id):
+    """Get completed blood request transactions (approved/rejected/completed only)"""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        # Get filter parameters
+        status_filter = request.args.get('status')
+        priority_filter = request.args.get('priority')
+        
+        # Build query to get both sent and received requests (excluding pending)
+        query = '''
+            SELECT DISTINCT
+                br.id,
+                br.requesting_hospital_id,
+                br.source_hospital_id,
+                br.blood_type,
+                br.units_requested,
+                br.priority,
+                br.status,
+                br.created_at,
+                br.notes,
+                rh.name as requesting_hospital_name,
+                sh.name as source_hospital_name
+            FROM blood_requests br
+            LEFT JOIN hospitals rh ON br.requesting_hospital_id = rh.id
+            LEFT JOIN hospitals sh ON br.source_hospital_id = sh.id
+            WHERE (br.requesting_hospital_id = ? OR br.source_hospital_id = ?)
+            AND br.status != 'pending'
+        '''
+        
+        params = [hospital_id, hospital_id]
+        
+        # Add filters
+        if status_filter and status_filter != 'All':
+            query += ' AND br.status = ?'
+            params.append(status_filter)
+        
+        if priority_filter and priority_filter != 'All':
+            query += ' AND br.priority = ?'
+            params.append(priority_filter)
+        
+        query += ' ORDER BY br.created_at DESC'
+        
+        cursor.execute(query, params)
+        transactions_data = cursor.fetchall()
+        
+        # Calculate stats
+        cursor.execute('''
+            SELECT br.status, COUNT(*) 
+            FROM blood_requests br
+            WHERE (br.requesting_hospital_id = ? OR br.source_hospital_id = ?)
+            AND br.status != 'pending'
+            GROUP BY br.status
+        ''', (hospital_id, hospital_id))
+        
+        status_counts = dict(cursor.fetchall())
+        
+        # Format response
+        transactions_list = []
+        for txn in transactions_data:
+            transactions_list.append({
+                'id': txn[0],
+                'requesting_hospital_id': txn[1],
+                'source_hospital_id': txn[2],
+                'blood_type': txn[3],
+                'units_requested': txn[4],
+                'priority': txn[5],
+                'priority_level': txn[5],
+                'status': txn[6],
+                'created_at': txn[7],
+                'notes': txn[8] or '',
+                'requesting_hospital_name': txn[9] or f'Hospital {txn[1]}',
+                'source_hospital_name': txn[10] or f'Hospital {txn[2]}'
+            })
+        
+        stats = {
+            'total': len(transactions_list),
+            'approved': status_counts.get('approved', 0),
+            'rejected': status_counts.get('rejected', 0),
+            'completed': status_counts.get('completed', 0)
+        }
+        
+        conn.close()
+        
+        return jsonify({
+            'transactions': transactions_list,
+            'stats': stats
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting transactions: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # =============================================
 # TRANSACTION HISTORY ENDPOINTS
 # =============================================

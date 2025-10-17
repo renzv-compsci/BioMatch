@@ -18,63 +18,83 @@ class HospitalBloodRequestsPage(BasePage):
         container.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Header within content area
-        ttk.Label(container, text="🩸 Blood Requests Management", 
+        ttk.Label(container, text="📋 Blood Requests (Received)", 
                  font=("Segoe UI", 18, "bold"),
                  foreground=BioMatchTheme.PRIMARY).pack(anchor="w", pady=(0, 20))
         
+        # Filter card
+        filter_card, filter_content = UIComponents.create_card(container, "Filter Requests")
+        filter_card.pack(fill="x", pady=(0, 20))
+        
+        filter_frame = ttk.Frame(filter_content)
+        filter_frame.pack(fill="x", pady=10)
+        
+        ttk.Label(filter_frame, text="Status:", font=("Segoe UI", 11)).grid(row=0, column=0, padx=5)
+        self.status_filter = ttk.Combobox(filter_frame, values=["All", "pending", "approved", "rejected"],
+                                         state="readonly", width=15)
+        self.status_filter.set("pending")
+        self.status_filter.grid(row=0, column=1, padx=5)
+        
+        ttk.Label(filter_frame, text="Priority:", font=("Segoe UI", 11)).grid(row=0, column=2, padx=5)
+        self.priority_filter = ttk.Combobox(filter_frame, values=["All", "Low", "Medium", "High", "Critical"],
+                                           state="readonly", width=15)
+        self.priority_filter.set("All")
+        self.priority_filter.grid(row=0, column=3, padx=5)
+        
+        ttk.Button(filter_frame, text="Apply Filter", command=self.load_requests,
+                  style="Primary.TButton").grid(row=0, column=4, padx=20)
+        
+        ttk.Button(filter_frame, text="🔄 Refresh Data", command=self.load_requests,
+                  style="Secondary.TButton").grid(row=0, column=5, padx=20)
+        
         # Stats frame
-        stats_card, stats_content = UIComponents.create_card(container, "Request Statistics")
-        stats_card.pack(fill="x", pady=(0, 10))
+        self.stats_frame = ttk.Frame(container)
+        self.stats_frame.pack(fill="x", pady=10)
         
-        self.stats_frame = ttk.Frame(stats_content)
-        self.stats_frame.pack(fill="x", pady=5)
+        # Requests table with action buttons
+        table_card, table_content = UIComponents.create_card(container, "Incoming Blood Requests")
+        table_card.pack(fill="both", expand=True, pady=(0, 20))
         
-        # New request form
-        request_card, form_content = UIComponents.create_card(container, "New Blood Request")
-        request_card.pack(fill="x", pady=(0, 20))
-        
-        form_frame = ttk.Frame(form_content)
-        form_frame.pack(fill="x", pady=15, padx=10)
-        
-        # Form fields
-        ttk.Label(form_frame, text="Blood Type:", font=("Segoe UI", 11)).grid(row=0, column=0, padx=5)
-        self.blood_type_combo = ttk.Combobox(form_frame, values=["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
-                                            state="readonly", width=10)
-        self.blood_type_combo.grid(row=0, column=1, padx=10)
-        self.blood_type_combo.set("A+")  # Default value
-        
-        ttk.Label(form_frame, text="Quantity:", font=("Segoe UI", 11)).grid(row=0, column=2, padx=5)
-        self.quantity_entry = ttk.Entry(form_frame, width=10)
-        self.quantity_entry.grid(row=0, column=3, padx=10)
-        
-        ttk.Label(form_frame, text="Priority:", font=("Segoe UI", 11)).grid(row=0, column=4, padx=5)
-        self.priority_combo = ttk.Combobox(form_frame, values=["Low", "Medium", "High", "Critical"],
-                                         state="readonly", width=10)
-        self.priority_combo.grid(row=0, column=5, padx=10)
-        self.priority_combo.set("Medium")  # Default value
-        
-        ttk.Button(form_frame, text="Submit Request", command=self.submit_request,
-                  style="Primary.TButton").grid(row=0, column=6, padx=20)
-        
-        # Requests table
-        table_card, table_content = UIComponents.create_card(container, "All Blood Requests")
-        table_card.pack(fill="both", expand=True)
+        # Table container
+        table_container = ttk.Frame(table_content)
+        table_container.pack(fill="both", expand=True, pady=10)
         
         self.tree = UIComponents.create_table(
-            table_content, 
-            ("ID", "Blood Type", "Quantity", "Priority", "Status", "Date"), 
-            height=10
+            table_container,
+            ("ID", "From Hospital", "Blood Type", "Quantity", "Priority", "Status", "Date"),
+            height=12
         )
         
         # Configure columns
-        self.tree.column("ID", width=80, anchor="center")
+        self.tree.column("ID", width=50, anchor="center")
+        self.tree.column("From Hospital", width=200)
         self.tree.column("Blood Type", width=100, anchor="center")
         self.tree.column("Quantity", width=100, anchor="center")
         self.tree.column("Priority", width=100, anchor="center")
         self.tree.column("Status", width=100, anchor="center")
-        self.tree.column("Date", width=150, anchor="center")
+        self.tree.column("Date", width=150)
+        
+        # Configure tags for status
+        self.tree.tag_configure("pending", background="#FFF9C4")
+        self.tree.tag_configure("approved", background="#C8E6C9")
+        self.tree.tag_configure("rejected", background="#FFCDD2")
+        
+        # Bind row selection
+        self.tree.bind("<Double-1>", self.on_row_select)
+        
+        # Action buttons frame
+        action_frame = ttk.Frame(table_content)
+        action_frame.pack(fill="x", pady=10, padx=10)
+        
+        ttk.Button(action_frame, text="✓ Approve Selected", command=self.approve_request,
+                  style="Primary.TButton").pack(side="left", padx=5)
+        ttk.Button(action_frame, text="✕ Reject Selected", command=self.reject_request,
+                  style="Secondary.TButton").pack(side="left", padx=5)
+        ttk.Button(action_frame, text="📝 Add Notes", command=self.add_notes,
+                  style="Outline.TButton").pack(side="left", padx=5)
         
         # Load initial data
+        self.selected_request = None
         self.after(100, self.load_requests)
     
     def refresh_data(self):
@@ -101,8 +121,9 @@ class HospitalBloodRequestsPage(BasePage):
         self.create_nav_buttons(nav_items)
     
     def load_requests(self):
-        """Load blood requests from backend"""
+        """Load incoming blood requests TO current hospital (for approval/rejection)"""
         if not self.controller.current_hospital:
+            # Silently return if no hospital is logged in (page not active yet)
             return
             
         # Clear existing data
@@ -112,139 +133,244 @@ class HospitalBloodRequestsPage(BasePage):
         for widget in self.stats_frame.winfo_children():
             widget.destroy()
         
-        # Initialize default values
-        blood_requests = []  # RENAMED from 'requests' to avoid conflict with requests module
-        stats = {
-            'total': 0,
-            'pending': 0,
-            'approved': 0,
-            'rejected': 0
-        }
-            
         try:
-            response = requests.get(
-                f"{API_BASE_URL}/hospital/{self.controller.current_hospital['id']}/requests"
+            # Build query parameters
+            params = {}
+            
+            status_value = self.status_filter.get()
+            if status_value != "All":
+                params["status"] = status_value
+            
+            priority_value = self.priority_filter.get()
+            if priority_value != "All":
+                params["priority"] = priority_value
+            
+            print(f"Fetching incoming blood requests with params: {params}")
+            
+            # Get current hospital ID
+            hospital_id = None
+            if self.controller.current_hospital:
+                hospital_id = self.controller.current_hospital.get('id')
+            elif self.controller.current_user:
+                hospital_id = self.controller.current_user.get('hospital_id')
+            
+            if not hospital_id:
+                # Silently return if no hospital ID (user not logged in)
+                return
+            
+            # Fetch incoming blood requests (TO current hospital) for approval/rejection
+            response = requests.get(f"{API_BASE_URL}/hospital/{hospital_id}/incoming_requests", params=params)
+            
+            print(f"Response status code: {response.status_code}")
+            
+            if response.status_code == 200:
+                data = response.json()
+                blood_requests = data.get('requests', []) if isinstance(data, dict) else data
+                stats = data.get('stats', {}) if isinstance(data, dict) else {}
+                
+                print(f"Received {len(blood_requests)} incoming blood requests")
+                
+                if isinstance(blood_requests, list) and len(blood_requests) > 0:
+                    # Display statistics
+                    UIComponents.create_stat_card(self.stats_frame, "Total Requests", 
+                                               stats.get('total', 0), BioMatchTheme.PRIMARY)
+                    UIComponents.create_stat_card(self.stats_frame, "Pending", 
+                                               stats.get('pending', 0), BioMatchTheme.WARNING)
+                    UIComponents.create_stat_card(self.stats_frame, "Approved", 
+                                               stats.get('approved', 0), BioMatchTheme.SUCCESS)
+                    UIComponents.create_stat_card(self.stats_frame, "Rejected", 
+                                               stats.get('rejected', 0), BioMatchTheme.DANGER)
+                    
+                    # Populate table with incoming requests
+                    for req in blood_requests:
+                        status = str(req.get('status', 'pending')).lower()
+                        tag = status
+                        
+                        # Get requesting hospital name
+                        hospital_name = req.get('requesting_hospital_name', f"Hospital {req.get('requesting_hospital_id', 'Unknown')}")
+                        
+                        # Format date
+                        date_str = req.get('created_at', '')
+                        if date_str:
+                            date_str = date_str[:16] if isinstance(date_str, str) else str(date_str)[:16]
+                        
+                        self.tree.insert("", tk.END, values=(
+                            req.get('id', ''),
+                            hospital_name,
+                            req.get('blood_type', ''),
+                            req.get('units_requested', ''),
+                            req.get('priority_level', ''),
+                            status.upper(),
+                            date_str
+                        ), tags=(tag,), iid=f"req_{req.get('id', '')}")
+                else:
+                    # No requests found
+                    UIComponents.create_stat_card(self.stats_frame, "Total Requests", 0, BioMatchTheme.PRIMARY)
+                    UIComponents.create_stat_card(self.stats_frame, "Pending", 0, BioMatchTheme.WARNING)
+                    UIComponents.create_stat_card(self.stats_frame, "Approved", 0, BioMatchTheme.SUCCESS)
+                    UIComponents.create_stat_card(self.stats_frame, "Rejected", 0, BioMatchTheme.DANGER)
+                    self.tree.insert("", tk.END, values=("No incoming requests found", "", "", "", "", "", ""))
+            else:
+                error_msg = response.json().get('error', 'Failed to load requests') if response.text else 'No response from server'
+                messagebox.showerror("Error", f"Failed to load requests: {error_msg}")
+                
+                # Show empty state
+                UIComponents.create_stat_card(self.stats_frame, "Total Requests", 0, BioMatchTheme.PRIMARY)
+                self.tree.insert("", tk.END, values=("Error loading requests", "", "", "", "", "", ""))
+        
+        except requests.exceptions.ConnectionError:
+            messagebox.showerror("Connection Error", "Cannot connect to server. Please ensure the backend is running.")
+            UIComponents.create_stat_card(self.stats_frame, "Total Requests", 0, BioMatchTheme.PRIMARY)
+            self.tree.insert("", tk.END, values=("Connection failed", "", "", "", "", "", ""))
+        except Exception as e:
+            print(f"Error loading requests: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Error loading requests: {str(e)}")
+            UIComponents.create_stat_card(self.stats_frame, "Total Requests", 0, BioMatchTheme.PRIMARY)
+            self.tree.insert("", tk.END, values=("Error occurred", "", "", "", "", "", ""))
+    
+    def on_row_select(self, event):
+        """Handle row selection"""
+        selected = self.tree.selection()
+        if selected:
+            self.selected_request = selected[0]
+    
+    def approve_request(self):
+        """Approve selected blood request"""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select a request to approve!")
+            return
+        
+        request_id = selected[0].replace("req_", "")
+        
+        # Get current hospital ID (the one approving)
+        approving_hospital_id = None
+        if self.controller.current_hospital:
+            approving_hospital_id = self.controller.current_hospital.get('id')
+        elif self.controller.current_user:
+            approving_hospital_id = self.controller.current_user.get('hospital_id')
+        
+        if not approving_hospital_id:
+            messagebox.showerror("Error", "Cannot determine approving hospital!")
+            return
+        
+        try:
+            response = requests.put(
+                f"{API_BASE_URL}/blood_requests/{request_id}/status",
+                json={
+                    "status": "approved",
+                    "approving_hospital_id": approving_hospital_id
+                }
             )
             
             if response.status_code == 200:
-                try:
-                    data = response.json()
-                    if isinstance(data, dict):
-                        blood_requests = data.get('requests', [])
-                        stats = data.get('stats', stats)  # Use default if not found
-                    elif isinstance(data, list):  # Handle case where response is just a list
-                        blood_requests = data
-                except (ValueError, TypeError) as e:
-                    print(f"Error parsing response: {e}")
+                messagebox.showinfo("Success", "Request approved successfully! Inventory has been updated.")
+                self.notify_hospital(request_id, "approved")
+                self.load_requests()
+                # Refresh dashboard if available
+                if "UnifiedDashboardPage" in self.controller.frames:
+                    self.controller.frames["UnifiedDashboardPage"].refresh_data()
             else:
-                print(f"Server error: {response.status_code}")
-                if response.content:
-                    print(f"Response content: {response.content}")
-
-            # Compute stats from client data to ensure correct values even if backend doesn't provide them
-            computed = {
-                'total': len(blood_requests),
-                'pending': sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'pending'),
-                'approved': sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'approved'),
-                'rejected': sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'rejected'),
-            }
-            # Prefer backend stats if provided and non-zero; otherwise use computed
-            def pick(k): 
-                v = stats.get(k, 0) if isinstance(stats, dict) else 0
-                try:
-                    return int(v) if int(v) > 0 else computed[k]
-                except Exception:
-                    return computed[k]
-            final_stats = {
-                'total': pick('total'),
-                'pending': pick('pending'),
-                'approved': pick('approved'),
-                'rejected': pick('rejected'),
-            }
-            
-            # Render statistics
-            UIComponents.create_stat_card(self.stats_frame, "Total Requests",
-                                          final_stats['total'], BioMatchTheme.PRIMARY)
-            UIComponents.create_stat_card(self.stats_frame, "Pending",
-                                          final_stats['pending'], BioMatchTheme.WARNING)
-            UIComponents.create_stat_card(self.stats_frame, "Approved",
-                                          final_stats['approved'], BioMatchTheme.SUCCESS)
-            UIComponents.create_stat_card(self.stats_frame, "Rejected",
-                                          final_stats['rejected'], BioMatchTheme.DANGER)
-            
-            # Update table with normalized values (quantity/priority fallbacks)
-            for req in blood_requests:
-                qty = (req.get('quantity_needed') or
-                       req.get('units_requested') or
-                       req.get('quantity') or 'N/A')
-                prio = (req.get('priority_level') or
-                        req.get('priority') or 'N/A')
-                date_val = req.get('created_at', 'N/A')
-                date_val = date_val[:16] if date_val and isinstance(date_val, str) else 'N/A'
-                status_val = str(req.get('status', 'N/A')).upper()
-                self.tree.insert("", "end", values=(
-                    req.get('id', 'N/A'),
-                    req.get('blood_type', 'N/A'),
-                    qty,
-                    prio,
-                    status_val,
-                    date_val
-                ))
-                
-        except requests.RequestException as e:
-            print(f"Network error: {e}")
+                error_msg = response.json().get('error', 'Failed to approve request')
+                messagebox.showerror("Error", error_msg)
         except Exception as e:
-            print(f"Unexpected error: {e}")
-        
-        # If no data loaded, show empty state
-        if not self.tree.get_children():
-            self.tree.insert("", "end", values=("No requests found", "", "", "", "", ""))
+            messagebox.showerror("Error", f"Failed to approve request: {e}")
     
-    def submit_request(self):
-        """Submit a new blood request"""
-        if not self.controller.current_hospital:
-            messagebox.showerror("Error", "Please login first!")
+    def reject_request(self):
+        """Reject selected blood request"""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select a request to reject!")
             return
-            
-        blood_type = self.blood_type_combo.get()
-        quantity = self.quantity_entry.get().strip()
-        priority = self.priority_combo.get()
         
-        if not all([blood_type, quantity, priority]):
-            messagebox.showerror("Error", "All fields are required!")
-            return
-            
+        request_id = selected[0].replace("req_", "")
+        
         try:
-            quantity_int = int(quantity)
-            if quantity_int <= 0:
-                messagebox.showerror("Error", "Quantity must be positive!")
+            response = requests.put(
+                f"{API_BASE_URL}/blood_requests/{request_id}/status",
+                json={"status": "rejected"}
+            )
+            
+            if response.status_code == 200:
+                messagebox.showinfo("Success", "Request rejected successfully!")
+                self.notify_hospital(request_id, "rejected")
+                self.load_requests()
+                # Refresh dashboard if available
+                if "UnifiedDashboardPage" in self.controller.frames:
+                    self.controller.frames["UnifiedDashboardPage"].refresh_data()
+            else:
+                error_msg = response.json().get('error', 'Failed to reject request')
+                messagebox.showerror("Error", error_msg)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to reject request: {e}")
+    
+    def add_notes(self):
+        """Add notes to a blood request"""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select a request to add notes!")
+            return
+        
+        request_id = selected[0].replace("req_", "")
+        
+        # Create notes window
+        notes_window = tk.Toplevel(self.controller.root)
+        notes_window.title("Add Notes to Request")
+        notes_window.geometry("500x300")
+        
+        # Center the window
+        x = (notes_window.winfo_screenwidth() // 2) - (500 // 2)
+        y = (notes_window.winfo_screenheight() // 2) - (300 // 2)
+        notes_window.geometry(f"+{x}+{y}")
+        
+        ttk.Label(notes_window, text="Add Notes for Request", style="Header.TLabel").pack(pady=20)
+        
+        text_frame = ttk.Frame(notes_window)
+        text_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        notes_text = tk.Text(text_frame, height=10, width=50, font=("Segoe UI", 11), wrap="word")
+        notes_text.pack(fill="both", expand=True)
+        
+        def save_notes():
+            note_content = notes_text.get("1.0", tk.END).strip()
+            
+            if not note_content:
+                messagebox.showwarning("Warning", "Please enter some notes!")
                 return
             
-            # Use /blood_requests endpoint with correct field names
-            response = requests.post(f"{API_BASE_URL}/blood_requests", json={
-                "blood_type": blood_type,
-                "units_requested": quantity_int,
-                "priority": priority,
-                "requesting_hospital_id": self.controller.current_hospital['id']
-            })
-            
-            if response.status_code == 201:
-                messagebox.showinfo("Success", "Blood request submitted successfully!")
-                self.clear_form()
-                self.load_requests()
-            else:
-                error_msg = response.json().get('error', 'Failed to submit request') if response.text else 'Unknown error'
-                messagebox.showerror("Error", error_msg)
+            try:
+                response = requests.put(
+                    f"{API_BASE_URL}/blood_requests/{request_id}/notes",
+                    json={"notes": note_content}
+                )
                 
-        except ValueError:
-            messagebox.showerror("Error", "Quantity must be a number!")
-        except requests.RequestException as e:
-            messagebox.showerror("Error", f"Connection error: {e}")
+                if response.status_code == 200:
+                    messagebox.showinfo("Success", "Notes added successfully!")
+                    notes_window.destroy()
+                    self.load_requests()
+                else:
+                    messagebox.showerror("Error", "Failed to add notes")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to add notes: {e}")
+        
+        button_frame = ttk.Frame(notes_window)
+        button_frame.pack(pady=15)
+        
+        ttk.Button(button_frame, text="Save Notes", command=save_notes,
+                  style="Primary.TButton").pack(side="left", padx=10)
+        ttk.Button(button_frame, text="Cancel", command=notes_window.destroy,
+                  style="Outline.TButton").pack(side="left", padx=10)
+    
+    def notify_hospital(self, request_id, action):
+        """Notify hospital of request approval/rejection"""
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/blood_requests/{request_id}/notify",
+                json={"action": action}
+            )
+            if response.status_code == 200:
+                print(f"Hospital notified of {action} action")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to submit request: {e}")
-            
-    def clear_form(self):
-        """Clear the request form"""
-        self.blood_type_combo.set("A+")
-        self.quantity_entry.delete(0, tk.END)
-        self.priority_combo.set("Medium")
+            print(f"Error notifying hospital: {e}")
