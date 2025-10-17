@@ -647,7 +647,7 @@ def request_blood():
             "required_date": required_date
         },
         "results": matches
-    }), 200
+    }, 200)
 
 
 # =============================================
@@ -775,6 +775,85 @@ def get_hospital_requests(hospital_id):
     except Exception as e:
         print(f"Server error: {str(e)}")
         return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+
+# Get blood requests TO a hospital (where they can approve/reject)
+@app.route('/hospital/<int:hospital_id>/incoming_requests', methods=['GET'])
+def get_incoming_requests(hospital_id):
+    """Get blood requests that are directed TO this hospital (for approval/rejection)"""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        # Get requests where this hospital could be a source (has matching blood type inventory)
+        # or requests specifically targeting this hospital
+        cursor.execute('''
+            SELECT DISTINCT
+                br.id,
+                br.requesting_hospital_id,
+                br.blood_type,
+                br.units_requested,
+                br.priority,
+                br.status,
+                br.created_at,
+                br.notes,
+                rh.name as requesting_hospital_name
+            FROM blood_requests br
+            LEFT JOIN hospitals rh ON br.requesting_hospital_id = rh.id
+            LEFT JOIN inventory i ON i.hospital_id = ? AND i.blood_type = br.blood_type
+            WHERE br.requesting_hospital_id != ?
+            AND (i.units_available > 0 OR br.source_hospital_id = ?)
+            ORDER BY br.created_at DESC
+        ''', (hospital_id, hospital_id, hospital_id))
+        
+        requests_data = cursor.fetchall()
+        
+        # Calculate stats
+        cursor.execute('''
+            SELECT br.status, COUNT(*) 
+            FROM blood_requests br
+            LEFT JOIN inventory i ON i.hospital_id = ? AND i.blood_type = br.blood_type
+            WHERE br.requesting_hospital_id != ?
+            AND (i.units_available > 0 OR br.source_hospital_id = ?)
+            GROUP BY br.status
+        ''', (hospital_id, hospital_id, hospital_id))
+        
+        status_counts = dict(cursor.fetchall())
+        
+        # Format response
+        requests_list = []
+        for req in requests_data:
+            requests_list.append({
+                'id': req[0],
+                'requesting_hospital_id': req[1],
+                'blood_type': req[2],
+                'units_requested': req[3],
+                'quantity_needed': req[3],
+                'priority': req[4],
+                'priority_level': req[4],
+                'status': req[5],
+                'created_at': req[6],
+                'notes': req[7] or '',
+                'requesting_hospital_name': req[8] or f'Hospital {req[1]}'
+            })
+        
+        stats = {
+            'total': len(requests_list),
+            'pending': status_counts.get('pending', 0),
+            'approved': status_counts.get('approved', 0),
+            'rejected': status_counts.get('rejected', 0)
+        }
+        
+        conn.close()
+        
+        return jsonify({
+            'requests': requests_list,
+            'stats': stats
+        }), 200
+        
+    except Exception as e:
+        print(f"Error getting incoming requests: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # =============================================
@@ -1058,15 +1137,109 @@ def update_blood_request_status(request_id: int):
         if new_status not in allowed:
             return jsonify({'error': f"Invalid status. Allowed: {', '.join(sorted(allowed))}"}), 400
 
+        # Get the hospital ID of who is approving this request
+        approving_hospital_id = data.get('approving_hospital_id')
+        
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
-        # Ensure request exists
-        cursor.execute('SELECT id FROM blood_requests WHERE id = ?', (request_id,))
+        # Fetch the request to get blood_type and requesting_hospital_id
+        cursor.execute('''
+            SELECT id, blood_type, units_requested, requesting_hospital_id, status 
+            FROM blood_requests WHERE id = ?
+        ''', (request_id,))
         row = cursor.fetchone()
         if not row:
             conn.close()
             return jsonify({'error': 'Blood request not found'}), 404
+
+        request_id_db, blood_type, units_requested, requesting_hospital_id, old_status = row
+
+        # If approving, transfer blood from approving hospital to requesting hospital
+        if new_status == 'approved' and old_status != 'approved':
+            if not approving_hospital_id:
+                conn.close()
+                return jsonify({'error': 'Approving hospital ID is required for approval'}), 400
+                
+            # Check and decrease inventory from the APPROVING hospital
+            cursor.execute('''
+                SELECT id, units_available FROM inventory
+                WHERE blood_type = ? AND hospital_id = ?
+            ''', (blood_type, approving_hospital_id))
+            approving_inv_row = cursor.fetchone()
+            
+            if approving_inv_row:
+                approving_inv_id, units_available = approving_inv_row
+                if units_available >= units_requested:
+                    # Decrease inventory from the APPROVING hospital
+                    cursor.execute('''
+                        UPDATE inventory
+                        SET units_available = units_available - ?, last_updated = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (units_requested, approving_inv_id))
+                    
+                    # Increase inventory for the REQUESTING hospital
+                    cursor.execute('''
+                        SELECT id, units_available FROM inventory
+                        WHERE blood_type = ? AND hospital_id = ?
+                    ''', (blood_type, requesting_hospital_id))
+                    requesting_inv_row = cursor.fetchone()
+                    
+                    if requesting_inv_row:
+                        # Update existing inventory
+                        requesting_inv_id = requesting_inv_row[0]
+                        cursor.execute('''
+                            UPDATE inventory
+                            SET units_available = units_available + ?, last_updated = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (units_requested, requesting_inv_id))
+                    else:
+                        # Create new inventory record for requesting hospital
+                        cursor.execute('''
+                            INSERT INTO inventory (blood_type, units_available, hospital_id, last_updated)
+                            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                        ''', (blood_type, units_requested, requesting_hospital_id))
+                        
+                else:
+                    conn.close()
+                    return jsonify({'error': f'Insufficient inventory. Available: {units_available}, Requested: {units_requested}'}), 400
+            else:
+                conn.close()
+                return jsonify({'error': 'Approving hospital inventory not found'}), 404
+        
+        # If rejecting after approval, reverse the blood transfer
+        elif new_status == 'rejected' and old_status == 'approved':
+            if approving_hospital_id:
+                # Return blood to the APPROVING hospital
+                cursor.execute('''
+                    SELECT id FROM inventory
+                    WHERE blood_type = ? AND hospital_id = ?
+                ''', (blood_type, approving_hospital_id))
+                approving_inv_row = cursor.fetchone()
+                
+                if approving_inv_row:
+                    approving_inv_id = approving_inv_row[0]
+                    cursor.execute('''
+                        UPDATE inventory
+                        SET units_available = units_available + ?, last_updated = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (units_requested, approving_inv_id))
+                
+                # Remove blood from the REQUESTING hospital
+                cursor.execute('''
+                    SELECT id, units_available FROM inventory
+                    WHERE blood_type = ? AND hospital_id = ?
+                ''', (blood_type, requesting_hospital_id))
+                requesting_inv_row = cursor.fetchone()
+                
+                if requesting_inv_row:
+                    requesting_inv_id, current_units = requesting_inv_row
+                    if current_units >= units_requested:
+                        cursor.execute('''
+                            UPDATE inventory
+                            SET units_available = units_available - ?, last_updated = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (units_requested, requesting_inv_id))
 
         # Update status
         cursor.execute('''

@@ -95,6 +95,9 @@ class BloodRequestPage(BasePage):
         ttk.Button(button_frame, text="Clear Form",
                  command=self.clear_form).pack(side="left", padx=5)
         
+        ttk.Button(button_frame, text="🔄 Refresh Data", style="Secondary.TButton",
+                 command=self.refresh_page_data).pack(side="left", padx=5)
+        
         # Request Status
         status_frame = ttk.Frame(container, relief="solid", borderwidth=1)
         status_frame.pack(fill="both", expand=True, pady=10)
@@ -108,7 +111,7 @@ class BloodRequestPage(BasePage):
         table_container.pack(fill="both", expand=True, padx=15, pady=10)
         
         # Status table
-        columns = ("ID", "Blood Type", "Units", "Status", "Date Requested")
+        columns = ("ID", "Requesting Hospital", "Blood Type", "Units", "Priority", "Status", "Date Requested")
         self.status_tree = ttk.Treeview(table_container, columns=columns, show="headings", height=8)
         
         for col in columns:
@@ -216,32 +219,53 @@ class BloodRequestPage(BasePage):
             return
         
         try:
-            response = requests.post(f"{API_BASE_URL}/request_blood", json={
+            # Get hospital_id - try both current_user and current_hospital
+            hospital_id = self.controller.current_user.get('hospital_id')
+            if not hospital_id and self.controller.current_hospital:
+                hospital_id = self.controller.current_hospital.get('id')
+            
+            if not hospital_id:
+                messagebox.showerror("Error", "Hospital information not found!")
+                return
+            
+            # Use /blood_requests endpoint instead of /request_blood for consistency
+            response = requests.post(f"{API_BASE_URL}/blood_requests", json={
                 "blood_type": blood_type,
-                "quantity_needed": int(units),
-                "priority_level": priority,
-                "required_date": required_date,
+                "units_requested": int(units),
+                "priority": priority,
+                "requesting_hospital_id": hospital_id,
                 "patient_name": patient_name,
                 "patient_id": patient_id,
                 "requesting_doctor": doctor,
-                "purpose": purpose,
-                "hospital_id": self.controller.current_user['hospital_id']
+                "purpose": purpose
             })
             
-            if response.status_code == 200:
+            print(f"Request response: {response.status_code}")
+            print(f"Request data sent with hospital_id: {hospital_id}")
+            
+            if response.status_code == 201:
                 messagebox.showinfo("Success", "Blood request submitted successfully!")
                 self.clear_form()
-                self.load_recent_requests()
+                # Force refresh after successful submission
+                self.after(500, self.load_recent_requests)  # Delay to ensure backend processing
             else:
-                error_msg = response.json().get("message", "Request failed") if response.text else "Request failed"
+                error_msg = response.json().get('error', 'Failed to submit request') if response.text else "Request failed"
                 messagebox.showerror("Error", error_msg)
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number of units.")
         except Exception as e:
             messagebox.showerror("Connection Error", f"Cannot connect to server: {e}")
+
+    def refresh_page_data(self):
+        """Refresh page data"""
+        self.load_recent_requests()
+        # Also refresh transaction history if it exists
+        if "TransactionHistoryPage" in self.controller.frames:
+            self.controller.frames["TransactionHistoryPage"].load_requests()
+        messagebox.showinfo("Success", "Data refreshed!")
     
     def load_recent_requests(self):
-        """Load recent blood requests"""
+        """Load recent blood requests from current hospital only"""
         if not self.controller.current_user:
             return
         
@@ -250,43 +274,62 @@ class BloodRequestPage(BasePage):
             self.status_tree.delete(item)
         
         try:
-            # Use correct endpoint that matches backend
+            # Get hospital_id - try both current_user and current_hospital
             hospital_id = self.controller.current_user.get('hospital_id')
+            if not hospital_id and self.controller.current_hospital:
+                hospital_id = self.controller.current_hospital.get('id')
+            
             if not hospital_id:
+                print("No hospital_id found")
                 return
             
-            response = requests.get(
-                f"{API_BASE_URL}/hospital/{hospital_id}/requests"
-            )
+            # Fetch blood requests for current hospital only
+            response = requests.get(f"{API_BASE_URL}/hospital/{hospital_id}/requests")
+            
+            print(f"Loading requests for hospital_id: {hospital_id}")
+            print(f"Response status: {response.status_code}")
             
             if response.status_code == 200:
                 data = response.json()
                 # Handle both dict and list responses
                 requests_data = data.get('requests', []) if isinstance(data, dict) else data
                 
-                for request in requests_data[:10]:  # Show last 10 requests
-                    date = request.get('created_at', '')
-                    if date:
-                        try:
-                            dt = datetime.fromisoformat(date.replace('Z', '+00:00'))
-                            date = dt.strftime("%Y-%m-%d %H:%M")
-                        except:
-                            pass
-                    
-                    # Use quantity_needed or units_requested with fallback
-                    qty = request.get('quantity_needed') or request.get('units_requested', '')
-                    
-                    self.status_tree.insert("", tk.END, values=(
-                        request.get('id', ''),
-                        request.get('blood_type', ''),
-                        qty,
-                        request.get('status', 'pending').upper(),
-                        date
-                    ))
+                print(f"Found {len(requests_data)} requests for current hospital")
+                
+                # Show requests from current hospital only
+                if isinstance(requests_data, list) and len(requests_data) > 0:
+                    for request in requests_data[:20]:  # Show last 20 requests
+                        date = request.get('created_at', '')
+                        if date:
+                            try:
+                                dt = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                                date = dt.strftime("%Y-%m-%d %H:%M")
+                            except:
+                                pass
+                        
+                        # Use quantity_needed or units_requested with fallback
+                        qty = request.get('quantity_needed') or request.get('units_requested', '')
+                        
+                        # Get hospital name
+                        hospital_name = request.get('requesting_hospital_name', f"Hospital {request.get('requesting_hospital_id', '')}")
+                        
+                        self.status_tree.insert("", tk.END, values=(
+                            request.get('id', ''),
+                            hospital_name,
+                            request.get('blood_type', ''),
+                            qty,
+                            request.get('priority_level', ''),
+                            request.get('status', 'pending').upper(),
+                            date
+                        ))
+                else:
+                    self.status_tree.insert("", tk.END, values=("No requests found", "", "", "", "", "", ""))
             else:
                 print(f"Error loading requests: {response.status_code}")
+                self.status_tree.insert("", tk.END, values=("Error loading requests", "", "", "", "", "", ""))
         except Exception as e:
             print(f"Error loading requests: {e}")
+            self.status_tree.insert("", tk.END, values=("Connection error", "", "", "", "", "", ""))
     
     def clear_form(self):
         """Clear all form fields"""

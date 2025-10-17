@@ -44,6 +44,9 @@ class TransactionHistoryPage(BasePage):
         ttk.Button(filter_frame, text="Apply Filter", command=self.load_requests,
                   style="Primary.TButton").grid(row=0, column=4, padx=20)
         
+        ttk.Button(filter_frame, text="🔄 Refresh Data", command=self.load_requests,
+                  style="Secondary.TButton").grid(row=0, column=5, padx=20)
+        
         # Stats frame
         self.stats_frame = ttk.Frame(container)
         self.stats_frame.pack(fill="x", pady=10)
@@ -118,7 +121,7 @@ class TransactionHistoryPage(BasePage):
         self.create_nav_buttons(nav_items)
     
     def load_requests(self):
-        """Load blood requests from all hospitals"""
+        """Load blood requests TO current hospital (for approval/rejection)"""
         # Clear existing data
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -138,39 +141,48 @@ class TransactionHistoryPage(BasePage):
             if priority_value != "All":
                 params["priority"] = priority_value
             
-            print(f"Fetching blood requests with params: {params}")
+            print(f"Fetching incoming blood requests with params: {params}")
             
-            # Fetch all blood requests
-            response = requests.get(f"{API_BASE_URL}/blood_requests", params=params)
+            # Get current hospital ID
+            hospital_id = None
+            if self.controller.current_hospital:
+                hospital_id = self.controller.current_hospital.get('id')
+            elif self.controller.current_user:
+                hospital_id = self.controller.current_user.get('hospital_id')
+            
+            if not hospital_id:
+                messagebox.showerror("Error", "No hospital information found")
+                return
+            
+            # Fetch incoming blood requests (TO current hospital) for approval/rejection
+            response = requests.get(f"{API_BASE_URL}/hospital/{hospital_id}/incoming_requests", params=params)
             
             print(f"Response status code: {response.status_code}")
             
             if response.status_code == 200:
-                blood_requests = response.json()
+                data = response.json()
+                blood_requests = data.get('requests', []) if isinstance(data, dict) else data
+                stats = data.get('stats', {}) if isinstance(data, dict) else {}
                 
-                print(f"Received {len(blood_requests)} blood requests")
+                print(f"Received {len(blood_requests)} incoming blood requests")
                 
                 if isinstance(blood_requests, list) and len(blood_requests) > 0:
                     # Display statistics
-                    pending_count = sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'pending')
-                    approved_count = sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'approved')
-                    rejected_count = sum(1 for r in blood_requests if str(r.get('status', '')).lower() == 'rejected')
-                    
                     UIComponents.create_stat_card(self.stats_frame, "Total Requests", 
-                                               len(blood_requests), BioMatchTheme.PRIMARY)
+                                               stats.get('total', 0), BioMatchTheme.PRIMARY)
                     UIComponents.create_stat_card(self.stats_frame, "Pending", 
-                                               pending_count, BioMatchTheme.WARNING)
+                                               stats.get('pending', 0), BioMatchTheme.WARNING)
                     UIComponents.create_stat_card(self.stats_frame, "Approved", 
-                                               approved_count, BioMatchTheme.SUCCESS)
+                                               stats.get('approved', 0), BioMatchTheme.SUCCESS)
                     UIComponents.create_stat_card(self.stats_frame, "Rejected", 
-                                               rejected_count, BioMatchTheme.DANGER)
+                                               stats.get('rejected', 0), BioMatchTheme.DANGER)
                     
-                    # Populate table with all requests
+                    # Populate table with incoming requests
                     for req in blood_requests:
                         status = str(req.get('status', 'pending')).lower()
                         tag = status
                         
-                        # Get hospital name or use ID as fallback
+                        # Get requesting hospital name
                         hospital_name = req.get('requesting_hospital_name', f"Hospital {req.get('requesting_hospital_id', 'Unknown')}")
                         
                         # Format date
@@ -193,7 +205,7 @@ class TransactionHistoryPage(BasePage):
                     UIComponents.create_stat_card(self.stats_frame, "Pending", 0, BioMatchTheme.WARNING)
                     UIComponents.create_stat_card(self.stats_frame, "Approved", 0, BioMatchTheme.SUCCESS)
                     UIComponents.create_stat_card(self.stats_frame, "Rejected", 0, BioMatchTheme.DANGER)
-                    self.tree.insert("", tk.END, values=("No requests found", "", "", "", "", "", ""))
+                    self.tree.insert("", tk.END, values=("No incoming requests found", "", "", "", "", "", ""))
             else:
                 error_msg = response.json().get('error', 'Failed to load requests') if response.text else 'No response from server'
                 messagebox.showerror("Error", f"Failed to load requests: {error_msg}")
@@ -229,18 +241,36 @@ class TransactionHistoryPage(BasePage):
         
         request_id = selected[0].replace("req_", "")
         
+        # Get current hospital ID (the one approving)
+        approving_hospital_id = None
+        if self.controller.current_hospital:
+            approving_hospital_id = self.controller.current_hospital.get('id')
+        elif self.controller.current_user:
+            approving_hospital_id = self.controller.current_user.get('hospital_id')
+        
+        if not approving_hospital_id:
+            messagebox.showerror("Error", "Cannot determine approving hospital!")
+            return
+        
         try:
             response = requests.put(
                 f"{API_BASE_URL}/blood_requests/{request_id}/status",
-                json={"status": "approved"}
+                json={
+                    "status": "approved",
+                    "approving_hospital_id": approving_hospital_id
+                }
             )
             
             if response.status_code == 200:
-                messagebox.showinfo("Success", "Request approved successfully!")
+                messagebox.showinfo("Success", "Request approved successfully! Inventory has been updated.")
                 self.notify_hospital(request_id, "approved")
                 self.load_requests()
+                # Refresh dashboard if available
+                if "UnifiedDashboardPage" in self.controller.frames:
+                    self.controller.frames["UnifiedDashboardPage"].refresh_data()
             else:
-                messagebox.showerror("Error", "Failed to approve request")
+                error_msg = response.json().get('error', 'Failed to approve request')
+                messagebox.showerror("Error", error_msg)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to approve request: {e}")
     
@@ -263,8 +293,12 @@ class TransactionHistoryPage(BasePage):
                 messagebox.showinfo("Success", "Request rejected successfully!")
                 self.notify_hospital(request_id, "rejected")
                 self.load_requests()
+                # Refresh dashboard if available
+                if "UnifiedDashboardPage" in self.controller.frames:
+                    self.controller.frames["UnifiedDashboardPage"].refresh_data()
             else:
-                messagebox.showerror("Error", "Failed to reject request")
+                error_msg = response.json().get('error', 'Failed to reject request')
+                messagebox.showerror("Error", error_msg)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to reject request: {e}")
     
